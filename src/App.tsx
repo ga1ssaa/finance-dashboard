@@ -1,6 +1,7 @@
 import DashboardLayout from "./components/DashboardLayout";
 import SummaryCards from "./features/dashboard/SummaryCards";
 import CategoryPieChart from "./features/dashboard/CategoryPieChart";
+import RecentTransactions from "./features/dashboard/RecentTransactions";
 import { mockTransactions } from "./utils/mockData"
 
 function App(){
@@ -9,12 +10,7 @@ function App(){
             <SummaryCards transactions={mockTransactions} />
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <CategoryPieChart transactions={mockTransactions}/>
-                
-                <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm flex items-center justify-center">
-                <p className="text-slate-400 font-serif font-medium">
-                    Recent Transactions will be there!
-                </p>
-            </div>
+                <RecentTransactions transactions={mockTransactions} />
             </div>
         </DashboardLayout>
     );

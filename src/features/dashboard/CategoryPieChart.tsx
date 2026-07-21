@@ -21,7 +21,7 @@ function CategoryPieChart({transactions}: CategoryPieChartProps){
             return acc;
         }, {} as Record<string, number>);
 
-    //Converting object ot array, which will be appropriate for Recharts
+        //Converting object ot array, which will be appropriate for Recharts
         return Object.keys(totals).map((category) => ({
             name: category,
             value: totals[category], 
