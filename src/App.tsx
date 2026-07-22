@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import DashboardLayout from "./components/DashboardLayout";
 import SummaryCards from "./features/dashboard/SummaryCards";
 import CategoryPieChart from "./features/dashboard/CategoryPieChart";
@@ -8,11 +8,30 @@ import { mockTransactions } from "./utils/mockData"
 import type { Transaction } from "./types/finance";
 import { Plus } from "lucide-react";
 
+const STORAGE_KEY = "finance_app_transactions";
+
 function App(){
 
     // Wrapping mockTransaction to useState
-    const [transactions, setTransactions] = useState<Transaction[]>(mockTransactions);
+    const [transactions, setTransactions] = useState<Transaction[]>(() => {
+
+        const savedTransactions = localStorage.getItem(STORAGE_KEY);
+        if(savedTransactions){
+            try{
+                return JSON.parse(savedTransactions);
+            }
+            catch(error){
+                console.error("Failed to parse transactions from localStorage:", error);
+            }
+        }
+        return mockTransactions;
+    });
+
     const [isModalOpen, setIsModalOpen] = useState(false);
+
+    useEffect(() => {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
+    }, [transactions]);
 
     // Function which adds new Transaction at the start of the Array
     const handleAddTransaction = (newTx: Transaction) => {
