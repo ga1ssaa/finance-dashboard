@@ -1,11 +1,12 @@
-import { ArrowDownRight, ArrowUpRight } from "lucide-react"
+import { ArrowDownRight, ArrowUpRight, Trash2 } from "lucide-react"
 import type { Transaction } from "../../types/finance"
 
 interface RecentTransactionsProps {
     transactions: Transaction[];
+    onDeleteTransaction: (id: string | number) => void;
 };
 
-function RecentTransactions({transactions}: RecentTransactionsProps){
+function RecentTransactions({transactions, onDeleteTransaction}: RecentTransactionsProps){
     //Sorting the of array(from new to old) 
     const recentTransactions = [...transactions]
         .sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime())
@@ -21,7 +22,7 @@ function RecentTransactions({transactions}: RecentTransactionsProps){
                 {recentTransactions.map((transaction) => (
                     <div
                         key={transaction.id}
-                        className="flex items-center justify-between p-3 hover:bg-slate-50 rounded-lg transition-colors"
+                        className="group flex items-center justify-between p-3 hover:bg-slate-50 rounded-lg transition-colors"
                     >
                         <div className="flex items-center gap-4">
 
@@ -36,11 +37,19 @@ function RecentTransactions({transactions}: RecentTransactionsProps){
                                     <p className="text-sm text-slate-500">{transaction.category} • {transaction.date}</p>
                             </div>
                             </div>
-
-                            <div className={`font-bold ${
+                            <div className="flex items-center gap-3">
+                                <div className={`font-bold ${
                                 transaction.type === 'income' ? 'text-emerald-600' : 'text-slate-800'
                             }`}>
                                 {transaction.type === 'income' ? '+' : '-'}${transaction.amount}
+                                </div>
+                                <button
+                                    onClick={() => onDeleteTransaction(transaction.id)}
+                                    className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                                    title="Delete transaction"
+                                >
+                                    <Trash2 size={18} />
+                                </button>
                             </div>
                     </div>
                 ))}

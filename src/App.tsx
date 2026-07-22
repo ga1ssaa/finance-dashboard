@@ -19,6 +19,10 @@ function App(){
         setTransactions((prev) => [newTx, ...prev]);
     }
 
+    const handleDeleteTransaction = (id: string | number) => {
+        setTransactions((prev) => prev.filter((transaction) => transaction.id !== id));
+    }
+
     return(
         <DashboardLayout>
             <div className="flex justify-between items-center mb-6">
@@ -45,7 +49,10 @@ function App(){
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <CategoryPieChart transactions={transactions}/>
-                <RecentTransactions transactions={transactions} />
+                <RecentTransactions 
+                    transactions={transactions} 
+                    onDeleteTransaction={handleDeleteTransaction}
+                />
             </div>
 
             {/* Adding modal and giving props to it */}
