@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowDownRight, ArrowUpRight, Trash2, Filter } from "lucide-react"
+import { ArrowDownRight, ArrowUpRight, Trash2, Filter, ArrowUpDown } from "lucide-react"
 import type { Transaction } from "../../types/finance"
 
 interface RecentTransactionsProps {
@@ -8,11 +8,13 @@ interface RecentTransactionsProps {
 };
 
 type FilterType = 'all' | 'income' | 'expense';
+type SortType = 'data-asc' | 'data-desc' | 'amount-asc' | 'amount-desc';
 
 function RecentTransactions({transactions, onDeleteTransaction}: RecentTransactionsProps){
 
     // 1. State for Filter
     const [filterType, setFilterType] = useState<FilterType>('all');
+    const [sortBy, setSortBy] = useState<SortType>('data-desc');
 
     // 2. Filtering transaction through type
     const filteredTransactions = transactions.filter((tx) => {
@@ -21,9 +23,22 @@ function RecentTransactions({transactions, onDeleteTransaction}: RecentTransacti
     })
 
     // 3. Sorting from old to new
-    const displayTransactions = [...filteredTransactions].sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-    );
+    const displayTransactions = [...filteredTransactions].sort((a,b) => {
+
+        if(sortBy === 'data-desc'){
+            return new Date(b.date).getTime() - new Date(a.date).getTime()
+        }
+        if(sortBy === 'data-asc'){
+            return new Date(a.date).getTime() - new Date(b.date).getTime();
+        }
+        if(sortBy === 'amount-desc'){
+            return b.amount - a.amount;
+        }
+        if(sortBy === 'amount-asc'){
+            return a.amount - b.amount;
+        }
+        return 0;
+    }); 
 
     return(
         <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm h-80 flex flex-col">
@@ -32,19 +47,41 @@ function RecentTransactions({transactions, onDeleteTransaction}: RecentTransacti
                     Recent Transactions
                 </h3>
                 
-                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs">
-                    <Filter size={14} className="text-slate-400"/>
-                    <select 
-                        value={filterType}
-                        onChange={(e) => setFilterType(e.target.value as FilterType)}
-                        className="bg-transparent focus:outline-none text-slate-700 font-medium cursor-pointer"
-                    >
-                        <option value="all">All</option>
-                        <option value="income">Income</option>
-                        <option value="expense">Expense</option>
-                    </select>
+                <div className="flex items-center gap-2">
+
+                    {/* Block with select options */}
+                    <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs">
+                            <Filter size={14} className="text-slate-400"/>
+                            <select 
+                                value={filterType}
+                                onChange={(e) => setFilterType(e.target.value as FilterType)}
+                                className="bg-transparent focus:outline-none text-slate-700 font-medium cursor-pointer"
+                            >
+                                <option value="all">All</option>
+                                <option value="income">Income</option>
+                                <option value="expense">Expense</option>
+                            </select>
+                        </div>
+
+                    {/* Sorting select */}
+
+                    <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-xs">
+                        <ArrowUpDown size={14}/>
+                        <select
+                            value={sortBy}
+                            onChange={(e) => setSortBy(e.target.value as SortType)}
+                            className="bg-transparent focus:outline-none text-slate-700 font-medium cursor-pointer"
+                        >
+                            <option value="data-desc">Newest First</option>
+                            <option value="data-asc">Oldest First</option>
+                            <option value="amount-desc">Highest Amount</option>
+                            <option value="amount-asc">Lowest Amount</option>
+                        </select>
+                    </div>
                 </div>
             </div>
+
+
 
             {/* List */}
             <div className="flex-1 overflow-y-auto space-y-2 pr-2">
