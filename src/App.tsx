@@ -3,7 +3,7 @@ import DashboardLayout from "./components/DashboardLayout";
 import SummaryCards from "./features/dashboard/SummaryCards";
 import CategoryPieChart from "./features/dashboard/CategoryPieChart";
 import RecentTransactions from "./features/dashboard/RecentTransactions";
-import AddTransactionModal from "./features/dashboard/AddTransactionModal";
+import TransactionModal from "./features/dashboard/TransactionModal";
 import { mockTransactions } from "./utils/mockData"
 import type { Transaction } from "./types/finance";
 import { Plus, Moon, Sun } from "lucide-react";
@@ -13,50 +13,61 @@ const THEME_KEY = "finance_app_theme";
 
 function App(){
 
-    // Wrapping mockTransaction to useState
+    // 1. Storage for ALL transactions (array)
     const [transactions, setTransactions] = useState<Transaction[]>(() => {
-
         const savedTransactions = localStorage.getItem(STORAGE_KEY);
-        if(savedTransactions){
-            try{
+        if (savedTransactions) {
+            try {
                 return JSON.parse(savedTransactions);
-            }
-            catch(error){
+            } catch (error) {
                 console.error("Failed to parse transactions from localStorage:", error);
             }
         }
         return mockTransactions;
     });
 
+    // 2. State for open add modal (boolean)
     const [isModalOpen, setIsModalOpen] = useState(false);
 
+    // 3. State for transaction being edited (single object or null)
+    const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+
+    // 4. Dark mode state
     const [isDarkMode, setIsDarkMode] = useState(() => {
         return localStorage.getItem(THEME_KEY) === "dark";
-    })
+    });
 
+    // Effects
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
     }, [transactions]);
 
     useEffect(() => {
-        if(isDarkMode){
+        if (isDarkMode) {
             document.documentElement.classList.add('dark');
             localStorage.setItem(THEME_KEY, 'dark');
-        }
-        else{
+        } else {
             document.documentElement.classList.remove('dark');
             localStorage.setItem(THEME_KEY, 'light');
         }
-    }, [isDarkMode])
+    }, [isDarkMode]);
 
-    // Function which adds new Transaction at the start of the Array
+    // Function to ADD a new transaction
     const handleAddTransaction = (newTx: Transaction) => {
         setTransactions((prev) => [newTx, ...prev]);
-    }
+    };
 
+    // Function to UPDATE an existing transaction
+    const handleUpdateTransaction = (updatedTx: Transaction) => {
+        setTransactions((prev) =>
+            prev.map((tx) => (tx.id === updatedTx.id ? updatedTx : tx))
+        );
+    };
+
+    // Function to DELETE a transaction
     const handleDeleteTransaction = (id: string | number) => {
         setTransactions((prev) => prev.filter((transaction) => transaction.id !== id));
-    }
+    };
 
     return(
         <DashboardLayout>
@@ -98,14 +109,25 @@ function App(){
                 <RecentTransactions 
                     transactions={transactions} 
                     onDeleteTransaction={handleDeleteTransaction}
+                    onEditTransaction={(tx) => setEditingTransaction(tx)}
                 />
             </div>
 
-            {/* Adding modal and giving props to it */}
-            <AddTransactionModal 
-                isOpen = {isModalOpen}
+            {/* Modal for adding transaction */}
+            <TransactionModal
+                key="add-modal"
+                isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
-                onAddTransaction={handleAddTransaction}
+                onSubmit={handleAddTransaction}
+            />
+
+            {/* Modal for editing transaction */}
+            <TransactionModal
+                key={editingTransaction ? String(editingTransaction.id) : "edit-modal"}
+                isOpen={Boolean(editingTransaction)}
+                initialData={editingTransaction}
+                onClose={() => setEditingTransaction(null)}
+                onSubmit={handleUpdateTransaction}
             />
 
         </DashboardLayout>
