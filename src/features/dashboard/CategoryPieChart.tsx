@@ -29,10 +29,12 @@ function CategoryPieChart({transactions}: CategoryPieChartProps){
     }, [transactions]);
 
     return(
-        <div className="bg-white rounded-xl p-6 border border-slate-200 shadow-sm h-80 flex flex-col">
-            <h3 className="font-serif text-lg font-semibold text-slate-800 mb-4">
+        <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm h-80 flex flex-col transition-colors duration-200 dark:[&_.recharts-legend-item-text]:!text-slate-300">
+
+            <h3 className="font-serif text-lg font-semibold text-slate-800 dark:text-white mb-4 transition-colors">
                 Expenses by Category
             </h3>
+
             <div className="flex-1 min-h-0">
                 <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
@@ -44,20 +46,27 @@ function CategoryPieChart({transactions}: CategoryPieChartProps){
                             outerRadius={80}
                             paddingAngle={5}
                             dataKey="value"
+                            stroke="none"
                         >
                             {chartData.map((_, index) => (
                                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]}/>
                             ))}
                         </Pie>
-                        <Tooltip formatter={(value) => `$${value}`} />
+                        <Tooltip 
+                            formatter={(value) => `$${value}`} 
+                            contentStyle={{
+                                backgroundColor: '#1e293b', 
+                                border: 'none',
+                                borderRadius: '8px',
+                                color: '#f8fafc', // slate-50
+                                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
+                            }}
+                        />
                         <Legend />
                     </PieChart>
                 </ResponsiveContainer>
             </div>
         </div> 
     );
-
-    
-
 }
 export default CategoryPieChart
