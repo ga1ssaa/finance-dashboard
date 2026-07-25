@@ -1,9 +1,20 @@
 import type { ReactNode } from "react";
-import { LayoutDashboard, ArrowRightLeft } from "lucide-react";
+import { NavLink } from "react-router-dom";
+import { LayoutDashboard, ArrowRightLeft, CreditCard, Target, Settings} from "lucide-react";
 
 interface DashboardLayoutProps {
     children: ReactNode;
 };
+
+// Navigation items definition
+
+const navItems = [
+    {path: "/", label: "Dashboard", icon: LayoutDashboard},
+    {path: "/transactions", label: "Transactions", icon: ArrowRightLeft},
+    {path: "/subscriptions", label: "Subscriptions", icon: CreditCard},
+    {path: "/budget", label: "Budget and Goals", icon: Target},
+    {path: "/settings", label: "Settings", icon: Settings},
+];
 
 function DashboardLayout({children}: DashboardLayoutProps){
     return(
@@ -15,16 +26,28 @@ function DashboardLayout({children}: DashboardLayoutProps){
                         FinanceApp
                     </h1>
                 </div>
-                <nav className="flex-1 p-4 space-y-2">
-                    <a href="#" className="flex items-center gap-3 px-4 py-2 bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 rounded-lg transition-colors">
-                        <LayoutDashboard size={20}/>
-                        <span className="font-serif font-medium">Dashboard</span>
-                    </a>
 
-                    <a href="#" className="flex items-center gap-3 px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 rounded-lg transition-colors">
-                        <ArrowRightLeft size={20}/>
-                        <span className="font-serif">Transactions</span>
-                    </a>
+                <nav className="flex-1 p-4 space-y-2">
+                    {navItems.map((item) => {
+                        const Icon = item.icon;
+                        return(
+                            <NavLink
+                                key={item.path}
+                                to={item.path}
+                                className = {({ isActive }) => 
+                                    `flex items-center gap-3 px-4 py-2 rounded-lg transition-colors font-serif ${
+                                        isActive ?
+                                            "bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 font-medium" 
+                                            :
+                                            "text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                    }`
+                                }
+                            >
+                                <Icon size={20} />
+                                <span>{item.label}</span>
+                            </NavLink>
+                        )
+                    })}
                 </nav>
             </aside>
 
