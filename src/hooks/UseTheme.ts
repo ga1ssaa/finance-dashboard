@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 
 const THEME_KEY = "finance_app_theme";
 
-export function UseTheme() {
+export default function UseTheme(){
     const [isDarkMode, setIsDarkMode] = useState(() => {
         return localStorage.getItem(THEME_KEY) === "dark";
     });

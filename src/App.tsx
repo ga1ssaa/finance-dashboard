@@ -1,31 +1,45 @@
 import { Routes, Route } from "react-router-dom";
 import DashboardLayout from "./components/DashboardLayout";
+
 import SummaryCards from "./features/dashboard/SummaryCards";
 import CategoryPieChart from "./features/dashboard/CategoryPieChart";
 import RecentTransactions from "./features/dashboard/RecentTransactions";
 import TransactionModal from "./features/dashboard/TransactionModal";
+import SubscriptionModal from "./features/dashboard/SubscriptionModal";
+
 import TransactionsPage from "./pages/TransactionsPage";
-import {UseTheme} from "./hooks/UseTheme";
+import SubscriptionsPage from "./pages/SubscrtiptionsPage";
+
+import UseTheme from "./hooks/UseTheme";
+import UseTransactions from "./hooks/UseTransactions";
 import type { TimeRange } from "./hooks/UseTransactions";
-import {UseTransactions} from "./hooks/UseTransactions";
+import UseSubscriptions from "./hooks/UseSubscriptions";
 import { Plus, Moon, Sun } from "lucide-react";
 
 function App() {
     // Custom hooks for theme and transaction logic
     const { isDarkMode, toggleTheme } = UseTheme();
+
     const {
         transactions,
         filteredTransactions,
         timeRange,
         setTimeRange,
-        isModalOpen,
-        setIsModalOpen,
+        isModalOpen: isTxModalOpen,       
+        setIsModalOpen: setIsTxModalOpen, 
         editingTransaction,
         setEditingTransaction,
         handleAddTransaction,
         handleUpdateTransaction,
         handleDeleteTransaction,
     } = UseTransactions();
+
+    const {
+        subscriptions,
+        isModalOpen: isSubModalOpen,      
+        setIsModalOpen: setIsSubModalOpen, 
+        handleAddSubscription,
+    } = UseSubscriptions();
     
     return (
         <DashboardLayout>
@@ -106,7 +120,20 @@ function App() {
                     transactions={transactions}
                     onDeleteTransaction={handleDeleteTransaction}
                     onEditTransaction={(tx) => setEditingTransaction(tx)}
-                    onOpenAddModal={() => setIsModalOpen(true)}
+                    onOpenAddModal={() => setIsTxModalOpen(true)}
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                />
+            }
+        />
+            
+        {/* SUBSCRIPTIONS PAGE */}
+        <Route 
+            path="/subscriptions"
+            element={
+                <SubscriptionsPage 
+                    subscriptions={subscriptions}
+                    onOpenAddModal={() => setIsSubModalOpen(true)}
                     isDarkMode={isDarkMode}
                     toggleTheme={toggleTheme}
                 />
@@ -114,11 +141,11 @@ function App() {
         />
             </Routes>
 
-        {/* Global Modals (Add & Edit Transactions) */}
+        {/* Global Modals (Add and Edit Transactions) */}
         <TransactionModal
             key="add-modal"
-            isOpen={isModalOpen}
-            onClose={() => setIsModalOpen(false)}
+            isOpen={isTxModalOpen}
+            onClose={() => setIsTxModalOpen(false)}
             onSubmit={handleAddTransaction}
         />
 
@@ -128,6 +155,14 @@ function App() {
             initialData={editingTransaction}
             onClose={() => setEditingTransaction(null)}
             onSubmit={handleUpdateTransaction}
+        />
+
+        {/* Modal for Subscriptions */}
+        <SubscriptionModal 
+            key={isSubModalOpen ? "sub-modal-open" : "sub-modal-closed"} 
+            isOpen={isSubModalOpen}
+            onClose={() => setIsSubModalOpen(false)}
+            onSubmit={handleAddSubscription}
         />
         </DashboardLayout>
     );

@@ -10,3 +10,20 @@ export interface Transaction {
     category: CategoryType;
     date: string;
 }
+
+export interface Subscription {
+    id: number | string;
+    serviceName: string;
+    amount: number;
+    nextPaymentDate: string;
+    icon: string;
+    status: 'active' | 'paused';
+}
+
+export interface BudgetCategory {
+    id: string;
+    label: string;
+    spent: number;
+    limit: number;
+    percentage: number;
+}
