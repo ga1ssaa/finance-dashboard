@@ -1,24 +1,28 @@
 import { Routes, Route } from "react-router-dom";
 import DashboardLayout from "./components/DashboardLayout";
+import { useState } from "react";
 
 import SummaryCards from "./features/dashboard/SummaryCards";
 import CategoryPieChart from "./features/dashboard/CategoryPieChart";
 import RecentTransactions from "./features/dashboard/RecentTransactions";
-import TransactionModal from "./features/dashboard/TransactionModal";
-import SubscriptionModal from "./features/dashboard/SubscriptionModal";
+import TransactionModal from "./components/modals/TransactionModal";
+import SubscriptionModal from "./components/modals/SubscriptionModal";
+import BudgetModal from "./components/modals/BudgetModal";
 
 import TransactionsPage from "./pages/TransactionsPage";
-import SubscriptionsPage from "./pages/SubscrtiptionsPage";
+import SubscriptionsPage from "./pages/SubscriptionsPage";
+import BudgetGoalsPage from "./pages/BudgetGoalsPage";
 
-import UseTheme from "./hooks/UseTheme";
-import UseTransactions from "./hooks/UseTransactions";
-import type { TimeRange } from "./hooks/UseTransactions";
-import UseSubscriptions from "./hooks/UseSubscriptions";
+import useTheme from "./hooks/useTheme";
+import useTransactions from "./hooks/useTransactions";
+import { useBudget } from "./hooks/useBudget";
+import type { TimeRange } from "./hooks/useTransactions";
+import useSubscriptions from "./hooks/useSubscriptions";
 import { Plus, Moon, Sun } from "lucide-react";
 
 function App() {
     // Custom hooks for theme and transaction logic
-    const { isDarkMode, toggleTheme } = UseTheme();
+    const { isDarkMode, toggleTheme } = useTheme();
 
     const {
         transactions,
@@ -32,14 +36,17 @@ function App() {
         handleAddTransaction,
         handleUpdateTransaction,
         handleDeleteTransaction,
-    } = UseTransactions();
+    } = useTransactions();
 
     const {
         subscriptions,
         isModalOpen: isSubModalOpen,      
         setIsModalOpen: setIsSubModalOpen, 
         handleAddSubscription,
-    } = UseSubscriptions();
+    } = useSubscriptions();
+
+    const {monthlyIncome, setMonthlyIncome, spentData} = useBudget();
+    const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
     
     return (
         <DashboardLayout>
@@ -71,7 +78,7 @@ function App() {
                         </button>
 
                         <button
-                            onClick={() => setIsModalOpen(true)}
+                            onClick={() => setIsTxModalOpen(true)}
                             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl transition-colors font-bold text-sm shadow-sm cursor-pointer w-fit"
                         >
                             <Plus size={18} />
@@ -139,6 +146,20 @@ function App() {
                 />
             }
         />
+        
+        {/* BUDGET & GOALS PAGE */}
+        <Route 
+            path="/budget"
+            element={
+                <BudgetGoalsPage
+                    monthlyIncome={monthlyIncome}
+                    spentData={spentData}
+                    onOpenSetBudgetModal={() => setIsBudgetModalOpen(true)}
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                />
+            }
+        />
             </Routes>
 
         {/* Global Modals (Add and Edit Transactions) */}
@@ -163,6 +184,17 @@ function App() {
             isOpen={isSubModalOpen}
             onClose={() => setIsSubModalOpen(false)}
             onSubmit={handleAddSubscription}
+        />
+
+        {/* Modal for Budget Settings */}
+        <BudgetModal
+            key={isBudgetModalOpen ? "budget-modal-open" : "budget-modal-closed"}
+            isOpen={isBudgetModalOpen}
+            onClose={() => setIsBudgetModalOpen(false)}
+            currentIncome={monthlyIncome}
+            onSubmit={(newIncome) => {
+              setMonthlyIncome(newIncome);
+            }}
         />
         </DashboardLayout>
     );

@@ -1,5 +1,5 @@
 import { ArrowDownRight, ArrowUpRight, Trash2, Pencil } from "lucide-react";
-import type { Transaction } from "../types/finance";
+import type { Transaction } from "../../types/finance";
 
 interface TransactionItemProps {
   transaction: Transaction;

@@ -1,8 +1,8 @@
 import { useState, useMemo } from "react";
 import type { Transaction } from "../../types/finance";
-import TransactionItem from "../../components/TransactionItem";
-import TransactionFilters from "../../components/TransactionFilters";
-import type { FilterType, SortType } from "../../components/TransactionFilters";
+import TransactionItem from "../transactions/TransactionItem";
+import TransactionFilters from "../transactions/TransactionFilters";
+import type { FilterType, SortType } from "../transactions/TransactionFilters";
 
 interface RecentTransactionsProps {
   transactions: Transaction[];

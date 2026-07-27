@@ -1,9 +1,9 @@
 import { useState, useMemo } from "react";
 import { Search, Plus, Sun, Moon } from "lucide-react";
 import type { Transaction } from "../types/finance";
-import TransactionItem from "../components/TransactionItem";
-import TransactionFilters from "../components/TransactionFilters";
-import type { FilterType, SortType } from "../components/TransactionFilters";
+import TransactionItem from "../features/transactions/TransactionItem";
+import TransactionFilters from "../features/transactions/TransactionFilters";
+import type { FilterType, SortType } from "../features/transactions/TransactionFilters";
 
 interface TransactionsPageProps {
     transactions: Transaction[];

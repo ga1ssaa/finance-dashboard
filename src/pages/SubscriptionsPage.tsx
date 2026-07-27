@@ -1,4 +1,4 @@
-import ActiveSubscriptions from "../features/dashboard/ActiveSubscriptions";
+import ActiveSubscriptions from "../features/subscriptions/ActiveSubscriptions";
 import type { Subscription } from "../types/finance";
 import { Plus, Moon, Sun } from "lucide-react";
 
@@ -10,7 +10,7 @@ interface SubscriptionsPageProps {
 };
 
 function SubscriptionsPage({subscriptions, onOpenAddModal, isDarkMode, toggleTheme}: SubscriptionsPageProps){
-    return (
+  return (
     <div className="space-y-6">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
