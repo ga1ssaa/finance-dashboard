@@ -12,6 +12,7 @@ import BudgetModal from "./components/modals/BudgetModal";
 import TransactionsPage from "./pages/TransactionsPage";
 import SubscriptionsPage from "./pages/SubscriptionsPage";
 import BudgetGoalsPage from "./pages/BudgetGoalsPage";
+import SettingsPage from "./pages/SettingsPage";
 
 import useTheme from "./hooks/useTheme";
 import useTransactions from "./hooks/useTransactions";
@@ -155,6 +156,17 @@ function App() {
                     monthlyIncome={monthlyIncome}
                     spentData={spentData}
                     onOpenSetBudgetModal={() => setIsBudgetModalOpen(true)}
+                    isDarkMode={isDarkMode}
+                    toggleTheme={toggleTheme}
+                />
+            }
+        />
+
+        {/* SETTINGS PAGE */}
+        <Route
+            path="/settings"
+            element={
+                <SettingsPage
                     isDarkMode={isDarkMode}
                     toggleTheme={toggleTheme}
                 />
