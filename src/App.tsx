@@ -17,6 +17,8 @@ import SettingsPage from "./pages/SettingsPage";
 import useTheme from "./hooks/useTheme";
 import useTransactions from "./hooks/useTransactions";
 import { useBudget } from "./hooks/useBudget";
+import { useInsights } from "./hooks/useInsights";
+import SmartInsights from "./features/dashboard/SmartInsights";
 import type { TimeRange } from "./hooks/useTransactions";
 import useSubscriptions from "./hooks/useSubscriptions";
 import { Plus, Moon, Sun } from "lucide-react";
@@ -48,7 +50,12 @@ function App() {
 
     const {monthlyIncome, setMonthlyIncome, spentData} = useBudget();
     const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
-    
+    const {insights} = useInsights({
+        monthlyIncome,
+        spentData,
+        transactions: filteredTransactions,
+    });
+
     return (
         <DashboardLayout>
         <Routes>
@@ -103,6 +110,9 @@ function App() {
                         </button>
                     ))}
                 </div>
+
+                {/* AI - advisor */}
+                <SmartInsights insights = {insights} />
 
                 {/* Summary Cards Overview */}
                 <SummaryCards transactions={filteredTransactions} />
