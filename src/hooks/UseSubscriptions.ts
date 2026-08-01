@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect} from "react";
 import type { Subscription } from "../types/finance";
+
+// Key for localStorage
+const STORAGE_KEY = "finance_app_subscriptions";
 
 // Initial mock data to start with
 const INITIAL_SUBSCRIPTIONS: Subscription[] = [
@@ -10,7 +13,24 @@ const INITIAL_SUBSCRIPTIONS: Subscription[] = [
 ];
 
 function UseSubscriptions() {
-    const [subscriptions, setSubscriptions] = useState<Subscription[]>(INITIAL_SUBSCRIPTIONS);
+
+    const [subscriptions, setSubscriptions] = useState<Subscription[]>(() => {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if(saved){
+            try{
+                return JSON.parse(saved);
+            }
+            catch(error){
+                console.error("Failed to parse subscriptions from localStorage:", error);
+            }
+        }
+        return INITIAL_SUBSCRIPTIONS;
+    });
+
+    useEffect(() => {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(subscriptions));
+    }, [subscriptions])
+
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingSubscription, setEditingSubscription] = useState<Subscription | null>(null);
 

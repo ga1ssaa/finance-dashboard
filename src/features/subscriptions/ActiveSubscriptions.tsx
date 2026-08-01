@@ -1,11 +1,13 @@
 import { CreditCard, MonitorPlay, Music, Dumbbell, Smartphone } from "lucide-react";
 import type { Subscription } from "../../types/finance";
+import { useSettings } from "../../hooks/useSettings"; 
 
 interface ActiveSubscriptionsProps {
     subscriptions: Subscription[];
 };
 
 function ActiveSubscriptions({subscriptions}: ActiveSubscriptionsProps){
+    const { formatAmount } = useSettings(); 
 
     // Calculating total monthly fixed costs
     const totalMonthly = subscriptions 
@@ -37,7 +39,7 @@ function ActiveSubscriptions({subscriptions}: ActiveSubscriptionsProps){
                 </div>
                 <div className="text-right">
                     <p className="font-bold text-xl text-slate-800 dark:text-white">
-                        ${totalMonthly.toFixed(2)}
+                        {formatAmount(totalMonthly)}
                     </p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">
                         / month
@@ -77,7 +79,7 @@ function ActiveSubscriptions({subscriptions}: ActiveSubscriptionsProps){
 
                             <div className="text-right">
                                 <p className="font-bold text-slate-800 dark:text-white">
-                                    ${sub.amount.toFixed(2)}
+                                    {formatAmount(sub.amount)}
                                 </p>
                                 <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
                                     sub.status === 'active'
@@ -92,7 +94,7 @@ function ActiveSubscriptions({subscriptions}: ActiveSubscriptionsProps){
                 )}
             </div>
         </div>
-        
     );
 }
-export default ActiveSubscriptions
+
+export default ActiveSubscriptions;
