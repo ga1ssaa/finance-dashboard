@@ -43,9 +43,13 @@ function App() {
 
     const {
         subscriptions,
-        isModalOpen: isSubModalOpen,      
+        isModalOpen: isSubModalOpen,       
         setIsModalOpen: setIsSubModalOpen, 
+        editingSubscription,
+        setEditingSubscription,
         handleAddSubscription,
+        handleUpdateSubscription,
+        handleDeleteSubscription,
     } = useSubscriptions();
 
     const {monthlyIncome, setMonthlyIncome, spentData} = useBudget();
@@ -151,6 +155,8 @@ function App() {
             element={
                 <SubscriptionsPage 
                     subscriptions={subscriptions}
+                    onDeleteSubscription={handleDeleteSubscription}
+                    onEditSubscription={(sub) => setEditingSubscription(sub)}
                     onOpenAddModal={() => setIsSubModalOpen(true)}
                     isDarkMode={isDarkMode}
                     toggleTheme={toggleTheme}
@@ -200,12 +206,24 @@ function App() {
             onSubmit={handleUpdateTransaction}
         />
 
-        {/* Modal for Subscriptions */}
-        <SubscriptionModal 
-            key={isSubModalOpen ? "sub-modal-open" : "sub-modal-closed"} 
+        {/* Global Modals for Subscriptions (Add and Edit) */}
+        <SubscriptionModal
+            key="add-sub-modal"
             isOpen={isSubModalOpen}
             onClose={() => setIsSubModalOpen(false)}
             onSubmit={handleAddSubscription}
+        />
+
+        <SubscriptionModal
+            key={editingSubscription ? String(editingSubscription.id) : "edit-sub-modal"}
+            isOpen={Boolean(editingSubscription)}
+            initialData={editingSubscription}
+            onClose={() => setEditingSubscription(null)}
+            onSubmit={(subData) => {
+                if (editingSubscription) {
+                    handleUpdateSubscription(editingSubscription.id, subData);
+                }
+            }}
         />
 
         {/* Modal for Budget Settings */}

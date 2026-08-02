@@ -3,13 +3,15 @@ import type { Subscription } from "../types/finance";
 import { Plus, Moon, Sun } from "lucide-react";
 
 interface SubscriptionsPageProps {
-    subscriptions: Subscription[];
-    onOpenAddModal: () => void;
-    isDarkMode?: boolean;
-    toggleTheme?: () => void;
-};
+  subscriptions: Subscription[];
+  onOpenAddModal: () => void;
+  onEditSubscription: (sub: Subscription) => void;
+  onDeleteSubscription: (id: string | number) => void;
+  isDarkMode?: boolean;
+  toggleTheme?: () => void;
+}
 
-function SubscriptionsPage({subscriptions, onOpenAddModal, isDarkMode, toggleTheme}: SubscriptionsPageProps){
+function SubscriptionsPage({subscriptions, onOpenAddModal, onEditSubscription, onDeleteSubscription, isDarkMode, toggleTheme}: SubscriptionsPageProps){
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -47,9 +49,14 @@ function SubscriptionsPage({subscriptions, onOpenAddModal, isDarkMode, toggleThe
 
       {/* Main Content Area */}
       <div className="w-full">
-        <ActiveSubscriptions subscriptions={subscriptions} />
+        <ActiveSubscriptions
+          subscriptions={subscriptions}
+          onEdit={onEditSubscription}
+          onDelete={onDeleteSubscription}
+        />
       </div>
     </div>
   );
 }
+
 export default SubscriptionsPage;

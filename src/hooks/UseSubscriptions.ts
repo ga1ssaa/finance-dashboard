@@ -1,10 +1,8 @@
-import { useState, useEffect} from "react";
+import { useState, useEffect } from "react";
 import type { Subscription } from "../types/finance";
 
-// Key for localStorage
 const STORAGE_KEY = "finance_app_subscriptions";
 
-// Initial mock data to start with
 const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     { id: 1, serviceName: "Spotify Premium", amount: 9.99, nextPaymentDate: "2026-08-15", icon: "music", status: "active" },
     { id: 2, serviceName: "Netflix", amount: 15.49, nextPaymentDate: "2026-08-20", icon: "monitor", status: "active" },
@@ -12,15 +10,13 @@ const INITIAL_SUBSCRIPTIONS: Subscription[] = [
     { id: 4, serviceName: "Claude AI", amount: 52.99, nextPaymentDate: "2026-08-10", icon: "credit-card", status: "paused" },
 ];
 
-function UseSubscriptions() {
-
+function useSubscriptions() {
     const [subscriptions, setSubscriptions] = useState<Subscription[]>(() => {
         const saved = localStorage.getItem(STORAGE_KEY);
-        if(saved){
-            try{
+        if (saved) {
+            try {
                 return JSON.parse(saved);
-            }
-            catch(error){
+            } catch (error) {
                 console.error("Failed to parse subscriptions from localStorage:", error);
             }
         }
@@ -29,29 +25,25 @@ function UseSubscriptions() {
 
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(subscriptions));
-    }, [subscriptions])
+    }, [subscriptions]);
 
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingSubscription, setEditingSubscription] = useState<Subscription | null>(null);
 
     const handleAddSubscription = (newSubData: Omit<Subscription, 'id' | 'icon'>) => {
         const newSubscription: Subscription = {
-        ...newSubData,
-        id: Date.now().toString(), // Generate a unique ID
-        icon: 'credit-card',       // Default icon string
+            ...newSubData,
+            id: Date.now().toString(),
+            icon: 'credit-card',
         };
         setSubscriptions(prev => [...prev, newSubscription]);
     };
 
-    const handleUpdateSubscription = (updatedSubData: Omit<Subscription, 'id' | 'icon'>) => {
-        if (!editingSubscription) return;
-        
-        setSubscriptions(prev => 
-        prev.map(sub => 
-            sub.id === editingSubscription.id 
-            ? { ...sub, ...updatedSubData } 
-            : sub
-        )
+    const handleUpdateSubscription = (id: string | number, updatedSubData: Omit<Subscription, 'id' | 'icon'>) => {
+        setSubscriptions(prev =>
+            prev.map(sub =>
+                sub.id === id ? { ...sub, ...updatedSubData } : sub
+            )
         );
         setEditingSubscription(null);
     };
@@ -71,4 +63,5 @@ function UseSubscriptions() {
         handleDeleteSubscription,
     };
 }
-export default UseSubscriptions
+
+export default useSubscriptions;

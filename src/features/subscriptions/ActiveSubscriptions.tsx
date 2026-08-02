@@ -1,14 +1,15 @@
-import { CreditCard, MonitorPlay, Music, Dumbbell, Smartphone } from "lucide-react";
+import { CreditCard, MonitorPlay, Music, Dumbbell, Smartphone, Pencil, Trash2 } from "lucide-react";
 import type { Subscription } from "../../types/finance";
 import { useSettings } from "../../hooks/useSettings"; 
 
 interface ActiveSubscriptionsProps {
     subscriptions: Subscription[];
+    onEdit: (subscription: Subscription) => void;
+    onDelete: (id: string | number) => void;
 };
 
-function ActiveSubscriptions({subscriptions}: ActiveSubscriptionsProps){
-    const { formatAmount } = useSettings(); 
-
+function ActiveSubscriptions({subscriptions, onEdit, onDelete}: ActiveSubscriptionsProps){
+    const { formatAmount } = useSettings();
     // Calculating total monthly fixed costs
     const totalMonthly = subscriptions 
         .filter((sub) => sub.status === 'active')
@@ -57,7 +58,7 @@ function ActiveSubscriptions({subscriptions}: ActiveSubscriptionsProps){
                     subscriptions.map((sub) => (
                         <div
                             key={sub.id}
-                            className={`flex items-center justify-between p-3 rounded-xl border ${
+                            className={`group flex items-center justify-between p-3 rounded-xl border ${
                                 sub.status === 'active' 
                                 ? "border-slate-100 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-800/50"
                                 : "border-slate-100 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/20 opacity-60"
@@ -77,17 +78,37 @@ function ActiveSubscriptions({subscriptions}: ActiveSubscriptionsProps){
                                 </div>
                             </div>
 
-                            <div className="text-right">
-                                <p className="font-bold text-slate-800 dark:text-white">
-                                    {formatAmount(sub.amount)}
-                                </p>
-                                <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
-                                    sub.status === 'active'
-                                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-                                    : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400"
-                                }`}>
-                                    {sub.status}
-                                </span>
+                            <div className="flex items-center gap-4">
+                                <div className="text-right">
+                                    <p className="font-bold text-slate-800 dark:text-white">
+                                        {formatAmount(sub.amount)}
+                                    </p>
+                                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                        sub.status === 'active'
+                                        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                                        : "bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-400"
+                                    }`}>
+                                        {sub.status}
+                                    </span>
+                                </div>
+
+                                <div>
+                                    <button
+                                        onClick={() => onEdit(sub)}
+                                        className="text-slate-300 dark:text-slate-600 hover:text-blue-500 dark:hover:text-blue-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer p-1"
+                                        title="Edit subscription"
+                                    >
+                                        <Pencil size={18} />
+                                    </button>
+
+                                    <button
+                                        onClick={() => onDelete(sub.id)}
+                                        className="text-slate-300 dark:text-slate-600 hover:text-red-500 dark:hover:text-red-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer p-1"
+                                        title="Delete subscription"
+                                    >
+                                        <Trash2 size={18} />
+                                    </button>    
+                                </div>
                             </div>
                         </div>
                     ))

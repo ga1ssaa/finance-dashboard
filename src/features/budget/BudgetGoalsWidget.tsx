@@ -1,4 +1,5 @@
 import { Target ,AlertTriangle, Coffee, Home, PiggyBank } from "lucide-react";
+import { useSettings } from "../../hooks/useSettings";
 
 interface BudgetGoalsWidgetProps {
 
@@ -11,6 +12,9 @@ interface BudgetGoalsWidgetProps {
     };
 }
 function BudgetGoalsWidget({monthlyIncome, spentData}: BudgetGoalsWidgetProps){
+
+    const {formatAmount} = useSettings();
+
     const categories = [
         {
             id: "needs",
@@ -32,7 +36,7 @@ function BudgetGoalsWidget({monthlyIncome, spentData}: BudgetGoalsWidgetProps){
         },
         {
             id: "savings",
-            label: "Savings (10%)",
+            label: "Savings (20%)",
             description: "Emergency fund, stocks",
             icon: <PiggyBank size={18}/>,
             limit: monthlyIncome * 0.20,
@@ -52,7 +56,7 @@ function BudgetGoalsWidget({monthlyIncome, spentData}: BudgetGoalsWidgetProps){
                         Budget and Goals (50/30/20)
                     </h3>
                     <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                        Based on your {monthlyIncome} monthly income
+                        Based on your {formatAmount(monthlyIncome)} monthly income
                     </p>
                 </div>
             </div>
@@ -61,7 +65,7 @@ function BudgetGoalsWidget({monthlyIncome, spentData}: BudgetGoalsWidgetProps){
             <div className="space-y-6">
                 {categories.map((person) => {
                     // Calculate percentages
-                    const rawPercent = (person.spent / person.limit) * 100;
+                    const rawPercent = person.limit > 0 ? (person.spent / person.limit) * 100 : 0;
                     const displayPercent = Math.min(rawPercent, 100);
                     
                     // Determine color based on limits (Warning at 80%, Danger at 100%)
@@ -100,7 +104,7 @@ function BudgetGoalsWidget({monthlyIncome, spentData}: BudgetGoalsWidgetProps){
                                 {/* Amount Spent vs Limit */}
                                 <div className="text-right">
                                     <p className={`font-bold ${isDanger ? "text-red-500" : "text-slate-800 dark:text-white"}`}>
-                                        ${person.spent.toFixed(0)} <span className="text-slate-400 dark:text-slate-500 text-sm font-normal ">/ ${person.limit}</span>
+                                        {formatAmount(person.spent)} <span className="text-slate-400 dark:text-slate-500 text-sm font-normal ">/ {formatAmount(person.limit)}</span>
                                     </p>
                                     <p className="text-xs text-slate-500 dark:text-slate-400">
                                         {rawPercent.toFixed(1)}% used

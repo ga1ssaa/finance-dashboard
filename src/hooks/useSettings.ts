@@ -37,6 +37,12 @@ export function useSettings() {
     });
     
     const [isLoadingRates, setIsLoadingRates] = useState(false);
+
+    const toBaseCurrency = useCallback(
+        (amountInCurrentCurrency: number): number => {
+            const rate = rates[currency] || 1;
+            return amountInCurrentCurrency / rate;
+        }, [currency, rates]);
     
     useEffect(() => {
         const fetchRates = async () => {
@@ -163,6 +169,7 @@ export function useSettings() {
             rates,
             isLoadingRates,
             convertAmount,
+            toBaseCurrency,
             formatAmount,
             resetAllData,
             exportData,

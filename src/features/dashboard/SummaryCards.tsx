@@ -1,11 +1,14 @@
 import { ArrowDownRight, ArrowUpRight, DollarSign } from "lucide-react"
 import type { Transaction } from "../../types/finance"
+import { useSettings } from "../../hooks/useSettings";
 
 interface SummaryCardsProps {
     transactions: Transaction[];
 };
 
 function SummaryCards({transactions}: SummaryCardsProps ){
+
+    const {formatAmount} = useSettings();
 
     {/* Income Formula */}
     const totalIncome = transactions
@@ -30,7 +33,7 @@ function SummaryCards({transactions}: SummaryCardsProps ){
                             Total Balance
                         </p>
                         <h3 className="text-2xl font-bold text-slate-800 dark:text-white transition-colors">
-                            ${balance.toFixed(2)}
+                            {formatAmount(balance)}
                         </h3>
                     </div>
                     <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/40 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 transition-colors">
@@ -47,7 +50,7 @@ function SummaryCards({transactions}: SummaryCardsProps ){
                             Total Income 
                         </p>
                         <h3 className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 transition-colors">
-                            ${totalIncome}
+                            {formatAmount(totalIncome)}
                         </h3>
                     </div>
                     <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/40 rounded-full flex items-center justify-center text-emerald-600 dark:text-emerald-400 transition-colors">
@@ -64,7 +67,7 @@ function SummaryCards({transactions}: SummaryCardsProps ){
                             Total Expense
                         </p>
                         <h3 className="text-2xl font-bold text-rose-600 dark:text-rose-400 transition-colors">
-                            ${totalExpense}
+                            {formatAmount(totalExpense)}
                         </h3>
                     </div>
                     <div className="w-12 h-12 bg-rose-50 dark:bg-rose-900/40 rounded-full flex items-center justify-center text-rose-600 dark:text-rose-400 transition-colors">

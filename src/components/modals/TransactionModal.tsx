@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import type { Transaction, CategoryType } from "../../types/finance";
+import { useSettings, CURRENCY_SYMBOLS } from "../../hooks/useSettings";
 
 interface TransactionModalProps {
     isOpen: boolean;
@@ -10,9 +11,17 @@ interface TransactionModalProps {
 }
 
 function TransactionModal({ isOpen, onClose, onSubmit, initialData }: TransactionModalProps) {
+
+    const {currency, convertAmount, toBaseCurrency} = useSettings();
     
     const [title, setTitle] = useState(initialData?.title || '');
-    const [amount, setAmount] = useState(initialData?.amount ? initialData.amount.toString() : '');
+    const [amount, setAmount] = useState(() => {
+        if (!initialData?.amount) return '';
+        const converted = convertAmount(initialData.amount);
+        return currency === 'KZT' || currency === 'RUB' 
+            ? Math.round(converted).toString() 
+            : converted.toFixed(2);
+    });
     const [type, setType] = useState<'income' | 'expense'>(initialData?.type || 'expense');
     const [category, setCategory] = useState<CategoryType | ''>((initialData?.category as CategoryType) || '');
 
@@ -26,7 +35,7 @@ function TransactionModal({ isOpen, onClose, onSubmit, initialData }: Transactio
         const transactionToSave: Transaction = {
             id: (initialData ? initialData.id : crypto.randomUUID()) as Transaction['id'],
             title,
-            amount: Number(amount),
+            amount: toBaseCurrency(Number(amount)),
             type,
             category: category as Transaction['category'],
             date: initialData ? initialData.date : new Date().toISOString().split('T')[0],
@@ -70,15 +79,20 @@ function TransactionModal({ isOpen, onClose, onSubmit, initialData }: Transactio
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1 font-serif transition-colors">
-                                Amount ($)
+                                Amount 
                             </label>
-                            <input
-                                type="number"
-                                placeholder="0.00"
-                                value={amount}
-                                onChange={(e) => setAmount(e.target.value)}
-                                className="w-full px-4 py-2 bg-transparent dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-colors"
-                            />
+                                <div className="relative">
+                                    <span className="absolute left-3 top-2.5 text-slate-400 font-bold select-none">
+                                        {CURRENCY_SYMBOLS[currency]} 
+                                    </span>
+                                    <input
+                                        type="number"
+                                        placeholder="0.00"
+                                        value={amount}
+                                        onChange={(e) => setAmount(e.target.value)}
+                                        className="w-full pl-8 pr-4 py-2 bg-transparent dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-colors"
+                                />
+                                </div>
                         </div>
 
                         <div>
@@ -87,8 +101,8 @@ function TransactionModal({ isOpen, onClose, onSubmit, initialData }: Transactio
                             </label>
                             <select
                                 value={type}
-                                onChange={(e) => setType(e.target.value as 'income' | 'expense')}
-                                className="w-full px-4 py-2 bg-transparent dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800 dark:text-white transition-colors cursor-pointer"
+                                    onChange={(e) => setType(e.target.value as 'income' | 'expense')}
+                                    className="w-full px-4 py-2 bg-transparent dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800 dark:text-white transition-colors cursor-pointer"
                             >
                                 <option value="expense" className="dark:bg-slate-800">Expense</option>
                                 <option value="income" className="dark:bg-slate-800">Income</option>

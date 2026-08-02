@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { X } from "lucide-react";
 import type { Subscription } from "../../types/finance";
+import { useSettings, CURRENCY_SYMBOLS } from "../../hooks/useSettings";
 
 interface SubscriptionModalProps {
     isOpen: boolean;
@@ -9,12 +10,20 @@ interface SubscriptionModalProps {
     initialData?: Subscription | null;
 }
 
-function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: SubscriptionModalProps) {
+function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: SubscriptionModalProps){
+
+    const {currency, convertAmount, toBaseCurrency} = useSettings();
 
     // Initialize state directly from initialData (if it exists)
     const [serviceName, setServiceName] = useState(initialData?.serviceName || '');
     
-    const [amount, setAmount] = useState(initialData?.amount?.toString() || '');
+    const [amount, setAmount] = useState(() => {
+        if (!initialData?.amount) return '';
+        const converted = convertAmount(initialData.amount);
+        return currency === 'KZT' || currency === 'RUB' 
+            ? Math.round(converted).toString() 
+            : converted.toFixed(2);
+    });
 
     const [nextPaymentDate, setNextPaymentDate] = useState(
         initialData?.nextPaymentDate || new Date().toISOString().split('T')[0]
@@ -28,7 +37,7 @@ function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: Subscript
         e.preventDefault();
         if (!serviceName || !amount || !nextPaymentDate) return;
 
-        onSubmit({serviceName,amount: parseFloat(amount),nextPaymentDate,status});
+        onSubmit({serviceName,amount: toBaseCurrency(parseFloat(amount)),nextPaymentDate,status});
         onClose();
     };
 
@@ -55,12 +64,12 @@ function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: Subscript
                             Service Name
                             </label>
                             <input
-                            type="text"
-                            required
-                            placeholder="e.g., Netflix, Spotify"
-                            value={serviceName}
-                            onChange={(e) => setServiceName(e.target.value)}
-                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 dark:text-white transition-colors"
+                                type="text"
+                                required
+                                placeholder="e.g., Netflix, Spotify"
+                                value={serviceName}
+                                onChange={(e) => setServiceName(e.target.value)}
+                                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 dark:text-white transition-colors"
                             />
                         </div>
 
@@ -68,16 +77,21 @@ function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: Subscript
                             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                             Monthly Amount
                             </label>
-                            <input
-                            type="number"
-                            required
-                            min="0"
-                            step="0.01"
-                            placeholder="0.00"
-                            value={amount}
-                            onChange={(e) => setAmount(e.target.value)}
-                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 dark:text-white transition-colors"
-                            />
+                            <div>
+                                <span className="absolute left-3 top-3 text-slate-400 font-bold select-none">
+                                    {CURRENCY_SYMBOLS[currency]}
+                                </span>
+                                <input
+                                    type="number"
+                                    required
+                                    min="0"
+                                    step="0.01"
+                                    placeholder="0.00"
+                                    value={amount}
+                                    onChange={(e) => setAmount(e.target.value)}
+                                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 dark:text-white transition-colors"
+                                />
+                            </div>
                         </div>
 
                         <div>
@@ -85,11 +99,11 @@ function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: Subscript
                             Next Payment Date
                             </label>
                             <input
-                            type="date"
-                            required
-                            value={nextPaymentDate}
-                            onChange={(e) => setNextPaymentDate(e.target.value)}
-                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 dark:text-white transition-colors"
+                                type="date"
+                                required
+                                value={nextPaymentDate}
+                                onChange={(e) => setNextPaymentDate(e.target.value)}
+                                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 dark:text-white transition-colors"
                             />
                         </div>
 
@@ -98,29 +112,29 @@ function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: Subscript
                             Status
                             </label>
                             <select
-                            value={status}
-                            onChange={(e) => setStatus(e.target.value as 'active' | 'paused')}
-                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 dark:text-white transition-colors"
+                                value={status}
+                                onChange={(e) => setStatus(e.target.value as 'active' | 'paused')}
+                                className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 dark:text-white transition-colors"
                             >
-                            <option value="active">Active</option>
-                            <option value="paused">Paused</option>
+                                <option value="active">Active</option>
+                                <option value="paused">Paused</option>
                             </select>
                         </div>
 
                         {/* Form Actions */}
                         <div className="flex items-center justify-end gap-3 pt-4">
                             <button
-                            type="button"
-                            onClick={onClose}
-                            className="px-4 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
+                                type="button"
+                                onClick={onClose}
+                                className="px-4 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
                             >
-                            Cancel
+                                Cancel
                             </button>
                             <button
-                            type="submit"
-                            className="px-4 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-sm cursor-pointer"
+                                type="submit"
+                                className="px-4 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-sm cursor-pointer"
                             >
-                            {initialData ? 'Save Changes' : 'Add Subscription'}
+                                {initialData ? 'Save Changes' : 'Add Subscription'}
                             </button>
                         </div>
                     </form>

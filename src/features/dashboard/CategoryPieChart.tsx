@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import type { Transaction } from "../../types/finance"
+import { useSettings } from "../../hooks/useSettings";
 
 interface CategoryPieChartProps {
     transactions: Transaction[];
@@ -10,6 +11,8 @@ interface CategoryPieChartProps {
 const COLORS = ['#3b82f6', '#10b981', '#ef4444', '#f59e0b', '#6366f1', '#ec4899'];
 
 function CategoryPieChart({transactions}: CategoryPieChartProps){
+
+    const {formatAmount} = useSettings();
 
     //Filtering only Expenses
     const chartData = useMemo(() => {
@@ -53,7 +56,7 @@ function CategoryPieChart({transactions}: CategoryPieChartProps){
                             ))}
                         </Pie>
                         <Tooltip 
-                            formatter={(value) => `$${value}`} 
+                            formatter={(value) => `${formatAmount(value)}`} 
                             contentStyle={{
                                 backgroundColor: '#1e293b', 
                                 border: 'none',
