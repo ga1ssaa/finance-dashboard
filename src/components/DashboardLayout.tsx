@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import { LayoutDashboard, ArrowRightLeft, CreditCard, Target, Settings} from "lucide-react";
+import { UserMenu } from "./UserMenu";
 
 interface DashboardLayoutProps {
     children: ReactNode;
@@ -59,9 +60,7 @@ function DashboardLayout({children}: DashboardLayoutProps){
                         Financial Overview
                     </h2>
 
-                    <div className="w-9 h-9 bg-blue-100 dark:bg-blue-900/60 text-blue-600 dark:text-blue-400 flex items-center justify-center rounded-full font-bold font-serif transition-colors">
-                        A
-                    </div>
+                    <UserMenu />
                 </header>
 
                 <main className="flex-1 p-8 overflow-auto">

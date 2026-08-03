@@ -56,7 +56,7 @@ function CategoryPieChart({transactions}: CategoryPieChartProps){
                             ))}
                         </Pie>
                         <Tooltip 
-                            formatter={(value) => `${formatAmount(value)}`} 
+                            formatter={(value) => formatAmount(Number(value))}
                             contentStyle={{
                                 backgroundColor: '#1e293b', 
                                 border: 'none',

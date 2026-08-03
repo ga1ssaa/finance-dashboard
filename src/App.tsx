@@ -169,9 +169,6 @@ function App() {
             path="/budget"
             element={
                 <BudgetGoalsPage
-                    monthlyIncome={monthlyIncome}
-                    spentData={spentData}
-                    onOpenSetBudgetModal={() => setIsBudgetModalOpen(true)}
                     isDarkMode={isDarkMode}
                     toggleTheme={toggleTheme}
                 />
