@@ -13,7 +13,7 @@ const DEFAULT_SPENT = {
 export function useBudget(){
 
     const [monthlyIncome, setMonthlyIncome] = useState<number>(() => {
-        const savedIncome = localStorage.getItem("monthlyIncome");
+        const savedIncome = localStorage.getItem(STORAGE_KEY_INCOME);
         // using new changed/saved income or by default 5000
         return savedIncome ? parseFloat(savedIncome) : 5000;
     });

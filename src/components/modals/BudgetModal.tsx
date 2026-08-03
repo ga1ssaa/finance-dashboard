@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { X } from "lucide-react";
-
+import { useSettings, CURRENCY_SYMBOLS } from "../../hooks/useSettings";
 interface BudgetModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -10,7 +10,9 @@ interface BudgetModalProps {
 
 function BudgetModal({isOpen, onClose, onSubmit, currentIncome}: BudgetModalProps){
 
-    const [income, setIncome] = useState(currentIncome.toString());
+    const {currency, convertAmount, toBaseCurrency} = useSettings();
+
+    const [income, setIncome] = useState(() => Math.round(convertAmount(currentIncome)).toString());
 
     if(!isOpen) return null;
 
@@ -18,7 +20,9 @@ function BudgetModal({isOpen, onClose, onSubmit, currentIncome}: BudgetModalProp
         e.preventDefault();
         if(!income) return;
 
-        onSubmit(parseFloat(income));
+        const incomeInUSD = toBaseCurrency(parseFloat(income));
+
+        onSubmit(incomeInUSD);
         onClose();
     };
 
@@ -42,8 +46,12 @@ function BudgetModal({isOpen, onClose, onSubmit, currentIncome}: BudgetModalProp
                 <form onSubmit={handleSubmit} className="p-6 space-y-4">
                     <div>
                         <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
-                            Monthly Income ($)
+                            Monthly Income
                         </label>
+                        <div className="relative">
+                                <span className="absolute left-3 top-9 text-slate-400 font-bold select-none">
+                                    {CURRENCY_SYMBOLS[currency]} 
+                            </span>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mb-3">
                             This amount will be used to calculate your 50/30/20 budget limits.
                         </p>
@@ -55,8 +63,9 @@ function BudgetModal({isOpen, onClose, onSubmit, currentIncome}: BudgetModalProp
                             placeholder="e.g., 5000"
                             value={income}
                             onChange={(e) => setIncome(e.target.value)}
-                            className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 dark:text-white transition-colors"
+                            className="w-full pl-8 pr-4 py-2 bg-transparent dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500 transition-colors"
                         />
+                    </div>
                     </div>
 
                     {/* Form Actions */}

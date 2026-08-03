@@ -15,6 +15,10 @@ function BudgetGoalsWidget({monthlyIncome, spentData}: BudgetGoalsWidgetProps){
 
     const {formatAmount} = useSettings();
 
+    const needsSpent = spentData?.needs ?? 0;
+    const wantsSpent = spentData?.wants ?? 0;
+    const savingsSpent = spentData?.savings ?? 0;
+
     const categories = [
         {
             id: "needs",
@@ -22,7 +26,7 @@ function BudgetGoalsWidget({monthlyIncome, spentData}: BudgetGoalsWidgetProps){
             description: "Housing, food and transport",
             icon: <Home size={18}/>,
             limit: monthlyIncome * 0.50,
-            spent: spentData.needs,
+            spent: needsSpent,
             baseColor: "bg-blue-500 dark:bg-blue-400",
         },
         {
@@ -31,7 +35,7 @@ function BudgetGoalsWidget({monthlyIncome, spentData}: BudgetGoalsWidgetProps){
             description: "Entertainment and Shopping",
             icon: <Coffee size={18}/>,
             limit: monthlyIncome * 0.30,
-            spent: spentData.wants,
+            spent: wantsSpent,
             baseColor: "bg-indigo-500 dark:bg-indigo-400",
         },
         {
@@ -40,19 +44,18 @@ function BudgetGoalsWidget({monthlyIncome, spentData}: BudgetGoalsWidgetProps){
             description: "Emergency fund, stocks",
             icon: <PiggyBank size={18}/>,
             limit: monthlyIncome * 0.20,
-            spent: spentData.savings,
+            spent: savingsSpent,
             baseColor: "bg-emerald-500 dark:bg-emerald-400",
         },
     ];
 
-    return(
+    return (
         <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm transition-colors duration-200">
-
             {/* Widget Header */}
             <div className="flex items-center justify-between mb-6">
                 <div>
                     <h3 className="font-semibold text-lg text-slate-800 dark:text-white flex items-center gap-2 transition-colors">
-                        <Target size={20} className="text-blue-500"/>
+                        <Target size={20} className="text-blue-500" />
                         Budget and Goals (50/30/20)
                     </h3>
                     <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
@@ -67,22 +70,21 @@ function BudgetGoalsWidget({monthlyIncome, spentData}: BudgetGoalsWidgetProps){
                     // Calculate percentages
                     const rawPercent = person.limit > 0 ? (person.spent / person.limit) * 100 : 0;
                     const displayPercent = Math.min(rawPercent, 100);
-                    
-                    // Determine color based on limits (Warning at 80%, Danger at 100%)
+
+                    // Determine color based on limits
                     let barColor = person.baseColor;
                     let isWarning = false;
                     let isDanger = false;
-                    
-                    if(rawPercent >= 100){
+
+                    if (rawPercent >= 100) {
                         barColor = "bg-red-500 dark:bg-red-400";
                         isDanger = true;
-                    }
-                    else if(rawPercent >= 80){
+                    } else if (rawPercent >= 80) {
                         barColor = "bg-amber-400 dark:bg-amber-400";
                         isWarning = true;
                     }
 
-                    return(
+                    return (
                         <div key={person.id} className="space-y-2">
                             {/* Category Header */}
                             <div className="flex items-center justify-between">
@@ -93,36 +95,41 @@ function BudgetGoalsWidget({monthlyIncome, spentData}: BudgetGoalsWidgetProps){
                                     <div>
                                         <p className="font-medium text-slate-800 dark:text-white flex items-center gap-2">
                                             {person.label}
-                                            {/* Show alert icon if limit is exceeded */}
-                                            {isDanger && <AlertTriangle size={14} className="text-red-500"/>}
+                                            {isDanger && <AlertTriangle size={14} className="text-red-500" />}
                                         </p>
                                         <p className="text-xs text-slate-500 dark:text-slate-400">
                                             {person.description}
                                         </p>
                                     </div>
                                 </div>
+
                                 {/* Amount Spent vs Limit */}
                                 <div className="text-right">
                                     <p className={`font-bold ${isDanger ? "text-red-500" : "text-slate-800 dark:text-white"}`}>
-                                        {formatAmount(person.spent)} <span className="text-slate-400 dark:text-slate-500 text-sm font-normal ">/ {formatAmount(person.limit)}</span>
+                                        {formatAmount(person.spent)}{" "}
+                                        <span className="text-slate-400 dark:text-slate-500 text-sm font-normal">
+                                            / {formatAmount(person.limit)}
+                                        </span>
                                     </p>
-                                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    <p className={`text-xs ${isDanger ? "text-red-500 font-semibold" : isWarning ? "text-amber-500 font-semibold" : "text-slate-500 dark:text-slate-400"}`}>
                                         {rawPercent.toFixed(1)}% used
                                     </p>
                                 </div>
-                            </div>  
+                            </div>
 
                             {/* Progress Bar Track */}
                             <div className="w-full bg-slate-100 dark:bg-slate-700/50 rounded-full h-3 overflow-hidden">
-                                <div className={`h-full rounded-full transition-all duration-500 ease-out ${barColor}`}
-                                style={{ width: `${displayPercent}%` }}
+                                <div
+                                    className={`h-full rounded-full transition-all duration-500 ease-out ${barColor}`}
+                                    style={{ width: `${displayPercent}%` }}
                                 />
                             </div>
                         </div>
                     );
-                })} 
+                })}
             </div>
         </div>
     );
 }
-export default BudgetGoalsWidget
+
+export default BudgetGoalsWidget;

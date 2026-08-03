@@ -1,20 +1,24 @@
+import { useState } from "react";
+import { useBudget } from "../hooks/useBudget";
 import BudgetGoalsWidget from "../features/budget/BudgetGoalsWidget";
+import BudgetModal from "../components/modals/BudgetModal";
 import { Moon, Sun, Settings } from "lucide-react";
 
 interface BudgetGoalsPageProps {
-    monthlyIncome: number;
-    spentData: {
-        needs: number;
-        wants: number;
-        savings: number;
-    };
     isDarkMode?: boolean;
     toggleTheme?: () => void;
-    onOpenSetBudgetModal?: () => void;
-};
+}
 
-function BudgetGoalsPage({monthlyIncome, spentData, isDarkMode, toggleTheme, onOpenSetBudgetModal}: BudgetGoalsPageProps){
-    return(
+function BudgetGoalsPage({ isDarkMode, toggleTheme }: BudgetGoalsPageProps) {
+    const { monthlyIncome, setMonthlyIncome, spentData } = useBudget();
+
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
+    const handleSaveIncome = (newIncomeInUSD: number) => {
+        setMonthlyIncome(newIncomeInUSD);
+    };
+
+    return (
         <div className="space-y-6">
             {/* Page Header */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -40,7 +44,7 @@ function BudgetGoalsPage({monthlyIncome, spentData, isDarkMode, toggleTheme, onO
                     )}
 
                     <button
-                        onClick={onOpenSetBudgetModal}
+                        onClick={() => setIsModalOpen(true)}
                         className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-sm cursor-pointer transition-colors w-fit"
                     >
                         <Settings size={18} />
@@ -51,13 +55,20 @@ function BudgetGoalsPage({monthlyIncome, spentData, isDarkMode, toggleTheme, onO
 
             {/* Main Content Area */}
             <div className="w-full">
-                {/* Passing the data down to the worker component */}
                 <BudgetGoalsWidget 
                     monthlyIncome={monthlyIncome}
                     spentData={spentData}
                 />
             </div>
+
+            {/* Modal */}
+            <BudgetModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                onSubmit={handleSaveIncome}
+                currentIncome={monthlyIncome}
+            />
         </div>
     );
 }
-export default BudgetGoalsPage
+export default BudgetGoalsPage;

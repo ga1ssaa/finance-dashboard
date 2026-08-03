@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import type { Transaction, Subscription } from "../types/finance";
 
 export type Currency = "USD" | "KZT" | "EUR" | "RUB";
 
@@ -58,7 +59,7 @@ export function useSettings() {
             const response = await fetch("https://open.er-api.com/v6/latest/USD");
             const data = await response.json();
 
-        if(data && data.rates) {
+        if(data && data.rates){
             const newRates: Record<Currency, number> = {
                 USD: 1,
                 KZT: data.rates.KZT || DEFAULT_RATES.KZT,
@@ -111,25 +112,45 @@ export function useSettings() {
             [convertAmount, currency]
         );
 
-        const resetAllData = () => {
-            localStorage.clear();
-            window.location.reload();
-        };
+    const resetAllData = () => {
+        localStorage.clear();
+        window.location.reload();
+    };
 
-        const exportData = () => {
-            const rawTx = localStorage.getItem(KEYS.TRANSACTIONS);
-            const rawSub = localStorage.getItem(KEYS.SUBSCRIPTIONS);
-            const rawIncome = localStorage.getItem(KEYS.INCOME);
-            const rawSpent = localStorage.getItem(KEYS.EXPENSE);
+    const exportData = () => {
+        const rawTx = localStorage.getItem(KEYS.TRANSACTIONS);
+        const rawSub = localStorage.getItem(KEYS.SUBSCRIPTIONS);
+        const rawIncome = localStorage.getItem(KEYS.INCOME);
+        const rawSpent = localStorage.getItem(KEYS.EXPENSE);
 
-            const data = {
-            transactions: rawTx ? JSON.parse(rawTx) : [],
-            subscriptions: rawSub ? JSON.parse(rawSub) : [],
-            monthlyIncome: rawIncome ? JSON.parse(rawIncome) : 5000,
-            spentData: rawSpent ? JSON.parse(rawSpent) : null,
-            currency: localStorage.getItem(KEYS.CURRENCY) || "USD",
-            rates,
-            exportedAt: new Date().toISOString(),
+        const txList: Transaction[] = rawTx ? JSON.parse(rawTx) : [];
+        const subList: Subscription[] = rawSub ? JSON.parse(rawSub) : [];
+        const incomeVal: number = rawIncome ? JSON.parse(rawIncome) : 5000;
+        const spentVal = rawSpent ? JSON.parse(rawSpent) : null;
+
+        const currentRate = rates[currency] || 1;
+        const toCurrentCurrency = (val: number) => Number((val * currentRate).toFixed(2));
+
+        const data = {
+                transactions: txList.map((tx) => ({
+                    ...tx,
+                    amount: toCurrentCurrency(tx.amount),
+                })),
+                subscriptions: subList.map((sub) => ({
+                    ...sub,
+                    amount: toCurrentCurrency(sub.amount),
+                })),
+                monthlyIncome: toCurrentCurrency(incomeVal),
+                spentData: spentVal
+                    ? {
+                          needs: toCurrentCurrency(spentVal.needs || 0),
+                          wants: toCurrentCurrency(spentVal.wants || 0),
+                          savings: toCurrentCurrency(spentVal.savings || 0),
+                      }
+                    : null,
+                currency,
+                rates,
+                exportedAt: new Date().toISOString(),
             };
 
             const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -141,38 +162,70 @@ export function useSettings() {
             URL.revokeObjectURL(url);
         };
 
-        const importData = (file: File) => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
+    const importData = (file: File) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
             try {
                 const content = e.target?.result as string;
                 const parsed = JSON.parse(content);
 
-                if (parsed.transactions) localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(parsed.transactions));
-                if (parsed.subscriptions) localStorage.setItem(KEYS.SUBSCRIPTIONS, JSON.stringify(parsed.subscriptions));
-                if (parsed.monthlyIncome !== undefined) localStorage.setItem(KEYS.INCOME, JSON.stringify(parsed.monthlyIncome));
-                if (parsed.spentData) localStorage.setItem(KEYS.EXPENSE, JSON.stringify(parsed.spentData));
-                if (parsed.currency) localStorage.setItem(KEYS.CURRENCY, parsed.currency);
+                const fileCurrency = (parsed.currency as Currency) || "USD";
+                const importRate = parsed.rates?.[fileCurrency] || rates[fileCurrency] || 1;
+                const toUSD = (val: number) => Number((val / importRate).toFixed(2));
+
+                if (parsed.transactions && Array.isArray(parsed.transactions)) {
+                    const convertedTx = (parsed.transactions as Transaction[]).map((tx) => ({
+                        ...tx,
+                        amount: toUSD(tx.amount),
+                    }));
+                    localStorage.setItem(KEYS.TRANSACTIONS, JSON.stringify(convertedTx));
+                }
+
+                if (parsed.subscriptions && Array.isArray(parsed.subscriptions)) {
+                    const convertedSub = (parsed.subscriptions as Subscription[]).map((sub) => ({
+                        ...sub,
+                        amount: toUSD(sub.amount),
+                    }));
+                    localStorage.setItem(KEYS.SUBSCRIPTIONS, JSON.stringify(convertedSub));
+                }
+
+                if (parsed.monthlyIncome !== undefined) {
+                    localStorage.setItem(KEYS.INCOME, JSON.stringify(toUSD(parsed.monthlyIncome)));
+                }
+
+                if (parsed.spentData) {
+                    const convertedSpent = {
+                        needs: toUSD(parsed.spentData.needs || 0),
+                        wants: toUSD(parsed.spentData.wants || 0),
+                        savings: toUSD(parsed.spentData.savings || 0),
+                    };
+                    localStorage.setItem(KEYS.EXPENSE, JSON.stringify(convertedSpent));
+                }
+
+                if (parsed.currency) {
+                    localStorage.setItem(KEYS.CURRENCY, parsed.currency);
+                }
 
                 alert("Data imported successfully!");
                 window.location.reload();
             } catch (error) {
-                window.Error("Invalid backup file format.", error);
+                console.error("Invalid backup file format:", error);
+                alert("Failed to import data. Invalid file format.");
             }
-            };
-            reader.readAsText(file);
         };
+        reader.readAsText(file);
+    };
 
-        return {
-            currency,
-            setCurrency,
-            rates,
-            isLoadingRates,
-            convertAmount,
-            toBaseCurrency,
-            formatAmount,
-            resetAllData,
-            exportData,
-            importData,
-        };
+    return {
+        currency,
+        setCurrency,
+        rates,
+        isLoadingRates,
+        convertAmount,
+        toBaseCurrency,
+        formatAmount,
+        resetAllData,
+        exportData,
+        importData,
+    };
 }

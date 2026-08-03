@@ -77,10 +77,10 @@ function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: Subscript
                             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                             Monthly Amount
                             </label>
-                            <div>
-                                <span className="absolute left-3 top-3 text-slate-400 font-bold select-none">
-                                    {CURRENCY_SYMBOLS[currency]}
-                                </span>
+                            <div className="relative">
+                                <span className="absolute left-3 top-2.5 text-slate-400 font-bold select-none">
+                                    {CURRENCY_SYMBOLS[currency]} 
+                            </span>
                                 <input
                                     type="number"
                                     required
@@ -89,7 +89,7 @@ function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: Subscript
                                     placeholder="0.00"
                                     value={amount}
                                     onChange={(e) => setAmount(e.target.value)}
-                                    className="w-full px-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 dark:text-white transition-colors"
+                                    className="w-full pl-8 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 dark:text-white transition-colors"
                                 />
                             </div>
                         </div>
