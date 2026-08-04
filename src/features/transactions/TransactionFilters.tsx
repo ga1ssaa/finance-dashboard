@@ -12,13 +12,13 @@ interface TransactionFiltersProps {
 
 function TransactionFilters({ filterType, setFilterType, sortBy, setSortBy}: TransactionFiltersProps) {
     return (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2 justify-start md:justify-end">
             <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs transition-colors">
                 <Filter size={14} className="text-slate-400 dark:text-slate-500" />
                 <select
                     value={filterType}
                     onChange={(e) => setFilterType(e.target.value as FilterType)}
-                    className="bg-transparent focus:outline-none text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
+                    className="bg-transparent focus:outline-none text-slate-700 dark:text-slate-300 font-medium cursor-pointer max-w-[110px] md:max-w-none"
                 >
                     <option value="all" className="dark:bg-slate-800">All</option>
                     <option value="income" className="dark:bg-slate-800">Income</option>
