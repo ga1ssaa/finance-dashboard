@@ -10,7 +10,7 @@ interface RecentTransactionsProps {
     onEditTransaction: (transaction: Transaction) => void;
 }
 
-function RecentTransactions({transactions, onDeleteTransaction, onEditTransaction}: RecentTransactionsProps) {
+function RecentTransactions({transactions, onDeleteTransaction, onEditTransaction}: RecentTransactionsProps){
     const [filterType, setFilterType] = useState<FilterType>("all");
     const [sortBy, setSortBy] = useState<SortType>("date-desc");
 

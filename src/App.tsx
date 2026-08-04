@@ -122,7 +122,7 @@ function App() {
                 <SummaryCards transactions={filteredTransactions} />
 
                 {/* Analytics & Recent Activity */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
                     <CategoryPieChart transactions={filteredTransactions} />
                     <RecentTransactions
                         transactions={filteredTransactions}

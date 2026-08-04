@@ -32,8 +32,7 @@ function CategoryPieChart({transactions}: CategoryPieChartProps){
     }, [transactions]);
 
     return(
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm h-80 flex flex-col transition-colors duration-200 dark:[&_.recharts-legend-item-text]:!text-slate-300">
-
+        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-6 min-h-[420px] md:h-80 flex flex-col">
             <h3 className="font-serif text-lg font-semibold text-slate-800 dark:text-white mb-4 transition-colors">
                 Expenses by Category
             </h3>
