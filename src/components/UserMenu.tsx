@@ -16,13 +16,6 @@ export const UserMenu: React.FC = () => {
     return () => document.removeEventListener("mousedown", handleClickOutside);
     }, []);
 
-    const handleResetData = () => {
-        if (window.confirm("Are you sure you want to reset all demo data to default values?")){
-            localStorage.clear();
-            window.location.reload();
-        }        
-    };
-    
     return(
         <div>
             <button
@@ -49,11 +42,11 @@ export const UserMenu: React.FC = () => {
                     </div>
                     <div className="pt-1">
                         <button
-                            onClick={handleResetData}
+                            disabled title="Reset is unavailable for API-managed data. Existing browser data is left untouched."
                             className="w-full flex items-center gap-2 px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50 hover:text-red-600 dark:hover:text-red-400 transition-colors text-left"
                         >
                         <RotateCcw className="w-4 h-4" />
-                            <span>Reset demo data</span>
+                            <span>Reset unavailable</span>
                             </button>
                         </div>
                     </div>

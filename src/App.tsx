@@ -1,19 +1,20 @@
 import { Routes, Route } from "react-router-dom";
 import DashboardLayout from "./components/DashboardLayout";
-import { useState } from "react";
+
 
 import SummaryCards from "./features/dashboard/SummaryCards";
 import CategoryPieChart from "./features/dashboard/CategoryPieChart";
 import RecentTransactions from "./features/dashboard/RecentTransactions";
 import TransactionModal from "./components/modals/TransactionModal";
 import SubscriptionModal from "./components/modals/SubscriptionModal";
-import BudgetModal from "./components/modals/BudgetModal";
+import ResourceStatus from "./components/ResourceStatus";
 
 import TransactionsPage from "./pages/TransactionsPage";
 import SubscriptionsPage from "./pages/SubscriptionsPage";
 import BudgetGoalsPage from "./pages/BudgetGoalsPage";
 import SettingsPage from "./pages/SettingsPage";
 
+import { useSettings } from "./hooks/useSettings";
 import useTheme from "./hooks/useTheme";
 import useTransactions from "./hooks/useTransactions";
 import { useBudget } from "./hooks/useBudget";
@@ -26,9 +27,16 @@ import { Plus, Moon, Sun } from "lucide-react";
 function App() {
     // Custom hooks for theme and transaction logic
     const { isDarkMode, toggleTheme } = useTheme();
+    const {preferenceLoading, preferenceError, refresh} = useSettings();
 
     const {
-        transactions,
+        dashboard,
+        recent,
+        recentFilterType,
+        setRecentFilterType,
+        recentSortBy,
+        setRecentSortBy,
+        mutationError: txError,
         filteredTransactions,
         timeRange,
         setTimeRange,
@@ -42,7 +50,7 @@ function App() {
     } = useTransactions();
 
     const {
-        subscriptions,
+        mutationError: subError,
         isModalOpen: isSubModalOpen,       
         setIsModalOpen: setIsSubModalOpen, 
         editingSubscription,
@@ -52,16 +60,17 @@ function App() {
         handleDeleteSubscription,
     } = useSubscriptions();
 
-    const {monthlyIncome, setMonthlyIncome, spentData} = useBudget();
-    const [isBudgetModalOpen, setIsBudgetModalOpen] = useState(false);
+    const {monthlyIncome, spentData} = useBudget();
     const {insights} = useInsights({
         monthlyIncome,
         spentData,
-        transactions: filteredTransactions,
+        transactions: dashboard.data?.transaction_count ? [{amount: 0}] : [],
     });
 
     return (
         <DashboardLayout>
+        <ResourceStatus error={txError || subError || preferenceError} retry={refresh} />
+        {preferenceLoading && <p role="status" className="text-sm text-slate-500">Loading currency preference… Monetary forms are available once ready.</p>}
         <Routes>
             {/* Main Page (Dashboard) */}
             <Route
@@ -90,7 +99,7 @@ function App() {
                         </button>
 
                         <button
-                            onClick={() => setIsTxModalOpen(true)}
+                            disabled={preferenceLoading || Boolean(preferenceError)} onClick={() => setIsTxModalOpen(true)}
                             className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl transition-colors font-bold text-sm shadow-sm cursor-pointer w-fit"
                         >
                             <Plus size={18} />
@@ -116,18 +125,26 @@ function App() {
                 </div>
 
                 {/* AI - advisor */}
-                <SmartInsights insights = {insights} />
+                <ResourceStatus loading={dashboard.loading} error={dashboard.error} retry={dashboard.retry} />
+                {dashboard.data && <SmartInsights insights = {insights} />}
 
                 {/* Summary Cards Overview */}
-                <SummaryCards transactions={filteredTransactions} />
+                {dashboard.data && <SummaryCards summary={dashboard.data} />}
 
                 {/* Analytics & Recent Activity */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
-                    <CategoryPieChart transactions={filteredTransactions} />
+                    <CategoryPieChart categories={dashboard.data?.expense_by_category || []} />
                     <RecentTransactions
+                        filterType={recentFilterType}
+                        setFilterType={setRecentFilterType}
+                        sortBy={recentSortBy}
+                        setSortBy={setRecentSortBy}
+                        loading={recent.loading}
+                        error={recent.error}
+                        retry={recent.retry}
                         transactions={filteredTransactions}
                         onDeleteTransaction={handleDeleteTransaction}
-                        onEditTransaction={(tx) => setEditingTransaction(tx)}
+                        onEditTransaction={(tx) => { if (!preferenceLoading && !preferenceError) setEditingTransaction(tx); }}
                     />
                 </div>
             </div>
@@ -139,10 +156,9 @@ function App() {
             path="/transactions"
             element={
                 <TransactionsPage
-                    transactions={transactions}
                     onDeleteTransaction={handleDeleteTransaction}
-                    onEditTransaction={(tx) => setEditingTransaction(tx)}
-                    onOpenAddModal={() => setIsTxModalOpen(true)}
+                    onEditTransaction={(tx) => { if (!preferenceLoading && !preferenceError) setEditingTransaction(tx); }}
+                    onOpenAddModal={() => { if (!preferenceLoading && !preferenceError) setIsTxModalOpen(true); }}
                     isDarkMode={isDarkMode}
                     toggleTheme={toggleTheme}
                 />
@@ -154,10 +170,9 @@ function App() {
             path="/subscriptions"
             element={
                 <SubscriptionsPage 
-                    subscriptions={subscriptions}
                     onDeleteSubscription={handleDeleteSubscription}
-                    onEditSubscription={(sub) => setEditingSubscription(sub)}
-                    onOpenAddModal={() => setIsSubModalOpen(true)}
+                    onEditSubscription={(sub) => { if (!preferenceLoading && !preferenceError) setEditingSubscription(sub); }}
+                    onOpenAddModal={() => { if (!preferenceLoading && !preferenceError) setIsSubModalOpen(true); }}
                     isDarkMode={isDarkMode}
                     toggleTheme={toggleTheme}
                 />
@@ -188,12 +203,12 @@ function App() {
             </Routes>
 
         {/* Global Modals (Add and Edit Transactions) */}
-        <TransactionModal
-            key="add-modal"
+        {isTxModalOpen && <TransactionModal
+            key={isTxModalOpen ? "add-modal-open" : "add-modal"}
             isOpen={isTxModalOpen}
             onClose={() => setIsTxModalOpen(false)}
             onSubmit={handleAddTransaction}
-        />
+        />}
 
         <TransactionModal
             key={editingTransaction ? String(editingTransaction.id) : "edit-modal"}
@@ -204,12 +219,12 @@ function App() {
         />
 
         {/* Global Modals for Subscriptions (Add and Edit) */}
-        <SubscriptionModal
-            key="add-sub-modal"
+        {isSubModalOpen && <SubscriptionModal
+            key={isSubModalOpen ? "add-sub-open" : "add-sub-modal"}
             isOpen={isSubModalOpen}
             onClose={() => setIsSubModalOpen(false)}
             onSubmit={handleAddSubscription}
-        />
+        />}
 
         <SubscriptionModal
             key={editingSubscription ? String(editingSubscription.id) : "edit-sub-modal"}
@@ -218,21 +233,12 @@ function App() {
             onClose={() => setEditingSubscription(null)}
             onSubmit={(subData) => {
                 if (editingSubscription) {
-                    handleUpdateSubscription(editingSubscription.id, subData);
+                    return handleUpdateSubscription(editingSubscription.id, subData);
                 }
+                return Promise.resolve();
             }}
         />
 
-        {/* Modal for Budget Settings */}
-        <BudgetModal
-            key={isBudgetModalOpen ? "budget-modal-open" : "budget-modal-closed"}
-            isOpen={isBudgetModalOpen}
-            onClose={() => setIsBudgetModalOpen(false)}
-            currentIncome={monthlyIncome}
-            onSubmit={(newIncome) => {
-              setMonthlyIncome(newIncome);
-            }}
-        />
         </DashboardLayout>
     );
 }

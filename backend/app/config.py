@@ -1,5 +1,6 @@
 """Environment configuration without exposing database credentials."""
 
+import re
 from pathlib import Path
 from uuid import UUID
 
@@ -23,6 +24,22 @@ class Settings(BaseSettings):
 
     database_url: SecretStr = Field(validation_alias="DATABASE_URL", repr=False)
     single_owner_id: UUID = Field(validation_alias="SINGLE_OWNER_ID", repr=False)
+    cors_allowed_origins: tuple[str, ...] = Field(
+        default=("http://localhost:5173", "http://127.0.0.1:5173"),
+        validation_alias="CORS_ALLOWED_ORIGINS",
+    )
+
+    @field_validator("cors_allowed_origins")
+    @classmethod
+    def validate_cors_allowed_origins(cls, origins: tuple[str, ...]) -> tuple[str, ...]:
+        """Allow only serialized local browser origins, never URLs or wildcards."""
+        for origin in origins:
+            matched = re.fullmatch(
+                r"https?://(?:localhost|127\.0\.0\.1|\[::1\]):([1-9][0-9]{0,4})", origin
+            )
+            if matched is None or int(matched.group(1)) > 65535:
+                raise ValueError("CORS_ALLOWED_ORIGINS must contain explicit loopback HTTP(S) origins with valid ports")
+        return tuple(dict.fromkeys(origins))
 
     @field_validator("database_url")
     @classmethod

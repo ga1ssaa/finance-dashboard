@@ -100,9 +100,9 @@ Includes:
 Customize your dashboard experience:
 
 - Dark / Light theme
-- Reset all application data
-- Clear LocalStorage
-- Confirmation dialogs
+- API-managed display currency
+- Browser-local theme and exchange-rate cache
+- Disabled legacy reset and backup controls
 - User preferences
 
 ---
@@ -187,7 +187,7 @@ The application is optimized for
 - Strong TypeScript typing
 - Responsive layout
 - Interactive charts
-- Local persistence
+- FastAPI persistence
 - Clean UI/UX
 - Feature-based organization
 
@@ -196,7 +196,6 @@ The application is optimized for
 # 🚀 Future Improvements
 
 - Authentication
-- Backend integration
 - Cloud database
 - Multi-currency support
 - Export to PDF
@@ -223,3 +222,34 @@ Astana IT University
 
 GitHub:
 https://github.com/ga1ssaa
+## Local full-stack development
+
+Financial records, manual budget inputs, and display-currency preferences now use the FastAPI API. Run the backend using [backend/README.md](backend/README.md), then configure and start this frontend:
+
+```bash
+cp -n .env.example .env.local
+npm install
+npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
+```
+
+`VITE_API_BASE_URL` defaults to `http://127.0.0.1:8000/api/v1`. The client accepts loopback API URLs only; use the backend CORS configuration for a different local frontend port. Restart Vite after changing its environment. This is a local, single-owner application without authentication; do not expose it publicly.
+
+Transactions and subscriptions are paginated and filtered by the server. Dashboard cards and category charts use full-set backend aggregates, and recurring costs use the backend subscription summary. Successful mutations invalidate active views. Offline/API errors show retry controls and never fall back to demo records. Forms remain open with their input on failed saves.
+
+All persisted monetary values are canonical USD decimal strings with up to eight fractional digits. Display currency is an API preference; rates and theme remain browser-local. Forms freeze their currency/rate when opened. Unchanged monetary inputs preserve their exact canonical value; changed inputs use exact decimal conversion and reject conversions requiring more than eight USD decimal places. Choose USD for values that cannot be represented exactly after conversion. Manual budget income, needs, wants, and savings inputs remain independent from transactions.
+
+Existing financial localStorage data is neither imported nor changed. Backup, restore, and reset controls are disabled for API-managed data. No automatic migration from browser storage is performed.
+
+Validation (Node.js 24 for the built-in TypeScript test loader):
+
+```bash
+npm run lint
+npm run build
+node --test tests/phase4.test.mjs
+```
+
+The opt-in live HTTP test in `tests/phase4-api.test.mjs` requires the disposable test API started by `tests/phase4_server.py` and its pagination seed. It uses port 18084 and the generated temporary database, never the normal development API. Once that isolated fixture is ready, run:
+
+```bash
+RUN_PHASE4_E2E=1 node --test tests/phase4-api.test.mjs
+```

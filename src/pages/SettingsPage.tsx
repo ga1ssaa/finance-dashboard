@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import ResourceStatus from "../components/ResourceStatus";
 import DangerZone from "../features/settings/DangerZone";
 import { Moon, Sun, Download, Upload, DollarSign } from "lucide-react";
 import { useSettings, CURRENCY_SYMBOLS, type Currency } from "../hooks/useSettings";
@@ -9,16 +9,7 @@ interface SettingsPageProps {
 }
 
 function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
-    const { currency, setCurrency, exportData, importData } = useSettings();
-    const fileInputRef = useRef<HTMLInputElement>(null);
-
-    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (file) {
-        importData(file);
-        }
-    };
-
+    const { currency, setCurrency, preferenceError, preferenceLoading, refresh } = useSettings();
     return (
         <div className="space-y-6">
         {/* Page Header */}
@@ -44,6 +35,7 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
         </div>
 
         <div className="max-w-4xl space-y-6">
+            <ResourceStatus error={preferenceError} retry={refresh} />
             {/* Currency Preference */}
             <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm transition-colors">
                 <div className="flex items-center justify-between gap-4">
@@ -58,6 +50,7 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
                     </div>
 
                     <select
+                    disabled={preferenceLoading}
                     value={currency}
                     onChange={(e) => setCurrency(e.target.value as Currency)}
                     className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white font-bold border border-slate-200 dark:border-slate-600 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -78,13 +71,13 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
                 Data Backup & Restore
                 </h3>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Export your data to JSON backup file or restore from a previous file.
+                Backup and restore are unavailable for API-managed data. Existing browser data is left untouched.
                 </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
                         <button
-                            onClick={exportData}
+                            disabled title="Unavailable for API-managed data"
                             className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-xl transition-colors cursor-pointer"
                             >
                             <Download size={18} />
@@ -92,20 +85,13 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
                         </button>
 
                         <button
-                            onClick={() => fileInputRef.current?.click()}
+                            disabled title="Unavailable for API-managed data"
                             className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-xl transition-colors cursor-pointer"
                             >
                             <Upload size={18} />
                             Import Backup
                         </button>
 
-                        <input
-                            ref={fileInputRef}
-                            type="file"
-                            accept=".json"
-                            onChange={handleFileChange}
-                            className="hidden"
-                        />
                     </div>
                 </div>
 

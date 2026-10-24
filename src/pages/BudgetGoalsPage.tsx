@@ -1,3 +1,5 @@
+import { useSettings } from "../hooks/useSettings";
+import ResourceStatus from "../components/ResourceStatus";
 import { useState } from "react";
 import { useBudget } from "../hooks/useBudget";
 import BudgetGoalsWidget from "../features/budget/BudgetGoalsWidget";
@@ -10,13 +12,10 @@ interface BudgetGoalsPageProps {
 }
 
 function BudgetGoalsPage({ isDarkMode, toggleTheme }: BudgetGoalsPageProps) {
-    const { monthlyIncome, setMonthlyIncome, spentData } = useBudget();
+    const { monthlyIncome, spentData, data, saveBudget, loading, error, retry } = useBudget();
 
+    const {preferenceLoading, preferenceError} = useSettings();
     const [isModalOpen, setIsModalOpen] = useState(false);
-
-    const handleSaveIncome = (newIncomeInUSD: number) => {
-        setMonthlyIncome(newIncomeInUSD);
-    };
 
     return (
         <div className="space-y-6">
@@ -44,7 +43,7 @@ function BudgetGoalsPage({ isDarkMode, toggleTheme }: BudgetGoalsPageProps) {
                     )}
 
                     <button
-                        onClick={() => setIsModalOpen(true)}
+                        disabled={!data || preferenceLoading || Boolean(preferenceError)} onClick={() => setIsModalOpen(true)}
                         className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-sm cursor-pointer transition-colors w-fit"
                     >
                         <Settings size={18} />
@@ -53,6 +52,7 @@ function BudgetGoalsPage({ isDarkMode, toggleTheme }: BudgetGoalsPageProps) {
                 </div>
             </div>
 
+            <ResourceStatus loading={loading} error={error} retry={retry} />
             {/* Main Content Area */}
             <div className="w-full">
                 <BudgetGoalsWidget 
@@ -62,12 +62,13 @@ function BudgetGoalsPage({ isDarkMode, toggleTheme }: BudgetGoalsPageProps) {
             </div>
 
             {/* Modal */}
-            <BudgetModal
+            {data && isModalOpen && <BudgetModal
+                key="open-budget"
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
-                onSubmit={handleSaveIncome}
-                currentIncome={monthlyIncome}
-            />
+                onSubmit={saveBudget}
+                currentBudget={data}
+            />}
         </div>
     );
 }

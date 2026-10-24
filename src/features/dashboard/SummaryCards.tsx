@@ -1,27 +1,13 @@
 import { ArrowDownRight, ArrowUpRight, DollarSign } from "lucide-react"
-import type { Transaction } from "../../types/finance"
+import type { DashboardRecord } from "../../api/client"
 import { useSettings } from "../../hooks/useSettings";
 
-interface SummaryCardsProps {
-    transactions: Transaction[];
-};
-
-function SummaryCards({transactions}: SummaryCardsProps ){
-
+interface SummaryCardsProps { summary: DashboardRecord }
+function SummaryCards({summary}: SummaryCardsProps){
     const {formatAmount} = useSettings();
-
-    {/* Income Formula */}
-    const totalIncome = transactions
-        .filter((t) => t.type === "income" )
-        .reduce((sum, transaction) => sum+transaction.amount, 0);
-    
-    {/* Expense Formula */}
-    const totalExpense = transactions
-        .filter((t) => t.type === "expense")
-        .reduce((sum, transaction) => sum+transaction.amount, 0);
-    
-    {/* Accounting Balance */}
-    const balance = totalIncome - totalExpense;
+    const totalIncome = summary.income_usd;
+    const totalExpense = summary.expenses_usd;
+    const balance = summary.balance_usd;
 
     return(
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

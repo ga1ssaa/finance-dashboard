@@ -1,9 +1,13 @@
+import { useState } from "react";
+import { useResource } from "../hooks/useResource";
+import { subscriptionFromApi } from "../hooks/useSubscriptions";
+import type { Page, SubscriptionRecord, SubscriptionSummary } from "../api/client";
+import ResourceStatus from "../components/ResourceStatus";
 import ActiveSubscriptions from "../features/subscriptions/ActiveSubscriptions";
 import type { Subscription } from "../types/finance";
 import { Plus, Moon, Sun } from "lucide-react";
 
 interface SubscriptionsPageProps {
-  subscriptions: Subscription[];
   onOpenAddModal: () => void;
   onEditSubscription: (sub: Subscription) => void;
   onDeleteSubscription: (id: string | number) => void;
@@ -11,7 +15,15 @@ interface SubscriptionsPageProps {
   toggleTheme?: () => void;
 }
 
-function SubscriptionsPage({subscriptions, onOpenAddModal, onEditSubscription, onDeleteSubscription, isDarkMode, toggleTheme}: SubscriptionsPageProps){
+function SubscriptionsPage({onOpenAddModal, onEditSubscription, onDeleteSubscription, isDarkMode, toggleTheme}: SubscriptionsPageProps){
+  const [offset,setOffset] = useState(0);
+  const [status,setStatus] = useState('all');
+  const [sort,setSort] = useState('next_payment_date:asc');
+  const [field,direction] = sort.split(':');
+  const query = new URLSearchParams({limit:'20',offset:String(offset),sort_by:field,sort_direction:direction});
+  if(status !== 'all') query.set('status',status);
+  const resource = useResource<Page<SubscriptionRecord>>(`/subscriptions?${query}`);
+  const summary = useResource<SubscriptionSummary>('/subscriptions/summary');
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -47,14 +59,21 @@ function SubscriptionsPage({subscriptions, onOpenAddModal, onEditSubscription, o
         </div>
       </div>
 
+      <div className="flex gap-4 text-slate-700 dark:text-slate-200">
+        <select aria-label="Subscription status" value={status} onChange={e=>{setStatus(e.target.value);setOffset(0);}} className="p-2 rounded-lg dark:bg-slate-800"><option value="all">All statuses</option><option value="active">Active</option><option value="paused">Paused</option></select>
+        <select aria-label="Sort subscriptions" value={sort} onChange={e=>{setSort(e.target.value);setOffset(0);}} className="p-2 rounded-lg dark:bg-slate-800"><option value="next_payment_date:asc">Payment date: earliest</option><option value="next_payment_date:desc">Payment date: latest</option><option value="amount_usd:asc">Amount: low to high</option><option value="amount_usd:desc">Amount: high to low</option><option value="service_name:asc">Service name</option></select>
+      </div>
+      <ResourceStatus loading={resource.loading || summary.loading} error={resource.error || summary.error} retry={resource.retry} />
       {/* Main Content Area */}
       <div className="w-full">
         <ActiveSubscriptions
-          subscriptions={subscriptions}
+          subscriptions={(resource.data?.items || []).map(subscriptionFromApi)}
+          summary={summary.data}
           onEdit={onEditSubscription}
           onDelete={onDeleteSubscription}
         />
       </div>
+      <div className="flex justify-between text-sm text-slate-600 dark:text-slate-300"><button disabled={offset===0 || resource.loading} onClick={()=>setOffset(Math.max(0,offset-20))}>Previous</button><span>{resource.data?.total || 0} subscriptions · Page {offset/20+1}</span><button disabled={resource.loading || !resource.data || offset+20>=resource.data.total} onClick={()=>setOffset(offset+20)}>Next</button></div>
     </div>
   );
 }

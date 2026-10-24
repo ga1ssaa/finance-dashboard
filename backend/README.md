@@ -66,6 +66,20 @@ override the file. `DATABASE_URL` is required and must use
 the URL; do not log its unwrapped value. `SINGLE_OWNER_ID` must be a valid UUID.
 For an existing private `.env`, add a generated UUID without printing the file.
 
+The React development server may call the API from `http://localhost:5173` or
+`http://127.0.0.1:5173` by default. `CORS_ALLOWED_ORIGINS` optionally overrides
+this exact allowlist using a JSON array, for example
+`CORS_ALLOWED_ORIGINS=["http://127.0.0.1:5174"]` for a different Vite port.
+Start Vite with `npm run dev -- --strictPort` to avoid silently switching away
+from its configured port when that port is occupied.
+Only `http://` or `https://` origins on `localhost`, `127.0.0.1`, or `[::1]`
+with an explicit port from 1 through 65535 are accepted. URLs with paths,
+trailing slashes, credentials, queries, fragments, wildcards, or public hosts
+are rejected at startup. Set `CORS_ALLOWED_ORIGINS=[]` to disable cross-origin
+access. Browser credentials are disabled; permitted cross-origin API methods
+are GET, POST, PATCH, and DELETE, with the Content-Type request header.
+CORS controls browser access, and does not replace authentication or a local bind.
+
 Start a fresh local PostgreSQL service:
 
 ```sh

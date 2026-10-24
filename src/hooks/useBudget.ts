@@ -1,51 +1,10 @@
-// 50/30/20 Rule (50% for necessary expenses, 30% for entertainment, 20% for savings)
-import  { useEffect, useState } from "react";
-
-const STORAGE_KEY_INCOME = "finance_app_monthly_income";
-const STORAGE_KEY_EXPENSE = "finance_app_monthly_expense";
-
-const DEFAULT_SPENT = {
-    needs: 2100,
-    wants: 1600,
-    savings: 500,
-};
-
-export function useBudget(){
-
-    const [monthlyIncome, setMonthlyIncome] = useState<number>(() => {
-        const savedIncome = localStorage.getItem(STORAGE_KEY_INCOME);
-        // using new changed/saved income or by default 5000
-        return savedIncome ? parseFloat(savedIncome) : 5000;
-    });
-
-    // 50% = 2500 , 30% = 1500 , 20% = 1000
-    // Data of expenses from localStorage
-    const [spentData, setSpentData] = useState(() => {
-        const savedSpent = localStorage.getItem(STORAGE_KEY_EXPENSE);
-        if(savedSpent){
-            try{
-                return JSON.parse(savedSpent);
-            }
-            catch(error){
-                console.error("Failed to parse spent data", error);
-            }
-        }
-        return DEFAULT_SPENT;
-    })
-
-    // Using for saving new income(if it was changed);
-    useEffect(() => {
-        localStorage.setItem(STORAGE_KEY_INCOME, monthlyIncome.toString());
-    }, [monthlyIncome]);
-
-    useEffect(() => {
-        localStorage.setItem(STORAGE_KEY_EXPENSE, JSON.stringify(spentData));
-    }, [spentData]);
-
-    return {
-        monthlyIncome,
-        setMonthlyIncome,
-        spentData,
-        setSpentData,
-    };
+import { request } from '../api/client';
+import type { BudgetRecord } from '../api/client';
+import { useResource } from './useResource';
+import { useFinance } from '../state/financeStore';
+export function useBudget() {
+    const resource = useResource<BudgetRecord>('/budget');
+    const { refresh } = useFinance();
+    const saveBudget = async (patch: Partial<BudgetRecord>) => { await request('/budget', { method: 'PATCH', body: JSON.stringify(patch) }); refresh(); };
+    return { ...resource, monthlyIncome: Number(resource.data?.monthly_income_usd || '0'), spentData: { needs: Number(resource.data?.needs_spent_usd || '0'), wants: Number(resource.data?.wants_spent_usd || '0'), savings: Number(resource.data?.savings_usd || '0') }, setMonthlyIncome: (value: string) => saveBudget({ monthly_income_usd: value }), saveBudget };
 }

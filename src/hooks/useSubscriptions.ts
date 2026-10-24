@@ -1,67 +1,47 @@
-import { useState, useEffect } from "react";
-import type { Subscription } from "../types/finance";
-
-const STORAGE_KEY = "finance_app_subscriptions";
-
-const INITIAL_SUBSCRIPTIONS: Subscription[] = [
-    { id: 1, serviceName: "Spotify Premium", amount: 9.99, nextPaymentDate: "2026-08-15", icon: "music", status: "active" },
-    { id: 2, serviceName: "Netflix", amount: 15.49, nextPaymentDate: "2026-08-20", icon: "monitor", status: "active" },
-    { id: 3, serviceName: "Gym Membership", amount: 17.49, nextPaymentDate: "2026-08-01", icon: "dumbbell", status: "active" },
-    { id: 4, serviceName: "Claude AI", amount: 52.99, nextPaymentDate: "2026-08-10", icon: "credit-card", status: "paused" },
-];
-
-function useSubscriptions() {
-    const [subscriptions, setSubscriptions] = useState<Subscription[]>(() => {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) {
-            try {
-                return JSON.parse(saved);
-            } catch (error) {
-                console.error("Failed to parse subscriptions from localStorage:", error);
-            }
-        }
-        return INITIAL_SUBSCRIPTIONS;
-    });
-
-    useEffect(() => {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(subscriptions));
-    }, [subscriptions]);
-
+import { useRef, useState } from 'react';
+import type { Subscription } from '../types/finance';
+import { request } from '../api/client';
+import type { SubscriptionRecord } from '../api/client';
+import { useFinance } from '../state/financeStore';
+export const subscriptionFromApi = (item: SubscriptionRecord): Subscription => ({ id: item.id, serviceName: item.service_name, amount: item.amount_usd, nextPaymentDate: item.next_payment_date, icon: item.icon, status: item.status });
+export default function useSubscriptions() {
+    const { refresh } = useFinance();
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingSubscription, setEditingSubscription] = useState<Subscription | null>(null);
-
-    const handleAddSubscription = (newSubData: Omit<Subscription, 'id' | 'icon'>) => {
-        const newSubscription: Subscription = {
-            ...newSubData,
-            id: Date.now().toString(),
-            icon: 'credit-card',
-        };
-        setSubscriptions(prev => [...prev, newSubscription]);
+    const [mutationError, setMutationError] = useState('');
+    const pending = useRef(new Set<string>());
+    const save = async (value: Omit<Subscription, 'id' | 'icon'>, id?: string | number) => {
+        const key = String(id || 'create');
+        if (pending.current.has(key))
+            throw new Error('A save is already in progress.');
+        pending.current.add(key);
+        const body: Record<string, string> = { service_name: value.serviceName, next_payment_date: value.nextPaymentDate, status: value.status };
+        if (!id || value.amount !== editingSubscription?.amount)
+            body.amount_usd = value.amount;
+        try {
+            await request(`/subscriptions${id ? `/${id}` : ''}`, { method: id ? 'PATCH' : 'POST', body: JSON.stringify(body) });
+            refresh();
+        }
+        finally {
+            pending.current.delete(key);
+        }
     };
-
-    const handleUpdateSubscription = (id: string | number, updatedSubData: Omit<Subscription, 'id' | 'icon'>) => {
-        setSubscriptions(prev =>
-            prev.map(sub =>
-                sub.id === id ? { ...sub, ...updatedSubData } : sub
-            )
-        );
-        setEditingSubscription(null);
+    const handleDeleteSubscription = async (id: string | number) => {
+        const key = String(id);
+        if (pending.current.has(key))
+            return;
+        pending.current.add(key);
+        setMutationError('');
+        try {
+            await request(`/subscriptions/${id}`, { method: 'DELETE' });
+            refresh();
+        }
+        catch (error) {
+            setMutationError(error instanceof Error ? error.message : 'Delete failed. Please retry.');
+        }
+        finally {
+            pending.current.delete(key);
+        }
     };
-
-    const handleDeleteSubscription = (id: string | number) => {
-        setSubscriptions(prev => prev.filter(sub => sub.id !== id));
-    };
-
-    return {
-        subscriptions,
-        isModalOpen,
-        setIsModalOpen,
-        editingSubscription,
-        setEditingSubscription,
-        handleAddSubscription,
-        handleUpdateSubscription,
-        handleDeleteSubscription,
-    };
+    return { isModalOpen, setIsModalOpen, editingSubscription, setEditingSubscription, handleAddSubscription: (value: Omit<Subscription, 'id' | 'icon'>) => save(value), handleUpdateSubscription: (id: string | number, value: Omit<Subscription, 'id' | 'icon'>) => save(value, id), handleDeleteSubscription, mutationError };
 }
-
-export default useSubscriptions;

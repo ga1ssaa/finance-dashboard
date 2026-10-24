@@ -1,12 +1,15 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { Search, Plus, Sun, Moon } from "lucide-react";
 import type { Transaction } from "../types/finance";
+import { useResource } from "../hooks/useResource";
+import { transactionFromApi } from "../hooks/useTransactions";
+import type { Page, TransactionRecord } from "../api/client";
+import ResourceStatus from "../components/ResourceStatus";
 import TransactionItem from "../features/transactions/TransactionItem";
 import TransactionFilters from "../features/transactions/TransactionFilters";
 import type { FilterType, SortType } from "../features/transactions/TransactionFilters";
 
 interface TransactionsPageProps {
-    transactions: Transaction[];
     onDeleteTransaction: (id: string | number) => void;
     onEditTransaction: (transaction: Transaction) => void;
     onOpenAddModal: () => void;
@@ -14,27 +17,17 @@ interface TransactionsPageProps {
     toggleTheme?: () => void;
 }
 
-function TransactionsPage({transactions, onDeleteTransaction, onEditTransaction, onOpenAddModal, isDarkMode, toggleTheme}: TransactionsPageProps) {
+function TransactionsPage({onDeleteTransaction, onEditTransaction, onOpenAddModal, isDarkMode, toggleTheme}: TransactionsPageProps) {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState<FilterType>('all');
     const [sortBy, setSortBy] = useState<SortType>('date-desc');
 
-    const processedTransactions = useMemo(() => {
-        return transactions
-        .filter((tx) => {
-            const matchesSearch = tx.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                tx.category.toLowerCase().includes(searchTerm.toLowerCase());
-            const matchesType = filterType === 'all' || tx.type === filterType;
-            return matchesSearch && matchesType;
-        })
-        .sort((a, b) => {
-            if (sortBy === 'date-desc') return new Date(b.date).getTime() - new Date(a.date).getTime();
-            if (sortBy === 'date-asc') return new Date(a.date).getTime() - new Date(b.date).getTime();
-            if (sortBy === 'amount-desc') return b.amount - a.amount;
-            if (sortBy === 'amount-asc') return a.amount - b.amount;
-            return 0;
-        });
-    }, [transactions, searchTerm, filterType, sortBy]);
+    const [offset, setOffset] = useState(0);
+    const [sortField, direction] = sortBy.split('-');
+    const query = new URLSearchParams({limit:'20', offset:String(offset), q:searchTerm, sort_by:sortField === 'date' ? 'transaction_date' : 'amount_usd', sort_direction:direction});
+    if (filterType !== 'all') query.set('type', filterType);
+    const resource = useResource<Page<TransactionRecord>>(`/transactions?${query}`);
+    const processedTransactions = (resource.data?.items || []).map(transactionFromApi);
 
     return (
             <div className="space-y-6">
@@ -78,22 +71,23 @@ function TransactionsPage({transactions, onDeleteTransaction, onEditTransaction,
                     type="text"
                     placeholder="Search by title or category..."
                     value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onChange={(e) => { setSearchTerm(e.target.value); setOffset(0); }}
                     className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-colors"
                 />
                 </div>
 
                 <TransactionFilters
                     filterType={filterType}
-                    setFilterType={setFilterType}
+                    setFilterType={value => {setFilterType(value);setOffset(0);}}
                     sortBy={sortBy}
-                    setSortBy={setSortBy}
+                    setSortBy={value => {setSortBy(value);setOffset(0);}}
                 />
             </div>
 
         {/* Full List */}
             <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm transition-colors space-y-2">
-                {processedTransactions.length === 0 ? (
+                <ResourceStatus loading={resource.loading} error={resource.error} retry={resource.retry} />
+                {!resource.loading && !resource.error && processedTransactions.length === 0 ? (
                 <div className="p-8 text-center text-slate-400 dark:text-slate-500 text-sm">
                     No transactions found.
                 </div>
@@ -107,6 +101,11 @@ function TransactionsPage({transactions, onDeleteTransaction, onEditTransaction,
                     />
                     ))
                 )}
+            </div>
+            <div className="flex items-center justify-between text-sm text-slate-600 dark:text-slate-300">
+                <button disabled={offset===0 || resource.loading} onClick={()=>setOffset(Math.max(0,offset-20))}>Previous</button>
+                <span>{resource.data?.total || 0} transactions · Page {Math.floor(offset/20)+1}</span>
+                <button disabled={resource.loading || !resource.data || offset+20 >= resource.data.total} onClick={()=>setOffset(offset+20)}>Next</button>
             </div>
         </div>
     );

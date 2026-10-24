@@ -1,20 +1,19 @@
+import { formatCalendarDate } from "../../utils/dates";
+import type { SubscriptionSummary } from "../../api/client";
 import { CreditCard, MonitorPlay, Music, Dumbbell, Smartphone, Pencil, Trash2 } from "lucide-react";
 import type { Subscription } from "../../types/finance";
-import { useSettings } from "../../hooks/useSettings"; 
+import { useSettings } from "../../hooks/useSettings";
 
 interface ActiveSubscriptionsProps {
     subscriptions: Subscription[];
+    summary: SubscriptionSummary | null;
     onEdit: (subscription: Subscription) => void;
     onDelete: (id: string | number) => void;
 };
 
-function ActiveSubscriptions({subscriptions, onEdit, onDelete}: ActiveSubscriptionsProps){
+function ActiveSubscriptions({subscriptions, onEdit, onDelete, summary}: ActiveSubscriptionsProps){
     const { formatAmount } = useSettings();
-    // Calculating total monthly fixed costs
-    const totalMonthly = subscriptions 
-        .filter((sub) => sub.status === 'active')
-        .reduce((sum, sub) => sum + sub.amount, 0);
-
+    const totalMonthly = summary?.monthly_cost_usd || '0';
     // Helper function to render the correct icon based on the service name
     const renderIcon = (name: string) => {
         const lowerName = name.toLowerCase();
@@ -35,7 +34,7 @@ function ActiveSubscriptions({subscriptions, onEdit, onDelete}: ActiveSubscripti
                         Active Subscriptions
                     </h3>
                     <p className="text-sm text-slate-500 dark:text-slate-400">
-                        Fixed monthly costs
+                        Fixed monthly costs · {summary?.active_count || 0} active · {summary?.paused_count || 0} paused
                     </p>
                 </div>
                 <div className="text-right">
@@ -59,7 +58,7 @@ function ActiveSubscriptions({subscriptions, onEdit, onDelete}: ActiveSubscripti
                         <div
                             key={sub.id}
                             className={`group flex items-center justify-between p-3 rounded-xl border ${
-                                sub.status === 'active' 
+                                sub.status === 'active'
                                 ? "border-slate-100 dark:border-slate-700/50 bg-slate-50 dark:bg-slate-800/50"
                                 : "border-slate-100 dark:border-slate-700/50 bg-slate-50/50 dark:bg-slate-800/20 opacity-60"
                             }`}
@@ -73,7 +72,7 @@ function ActiveSubscriptions({subscriptions, onEdit, onDelete}: ActiveSubscripti
                                         {sub.serviceName}
                                     </p>
                                     <p className="text-xs text-slate-500 dark:text-slate-400">
-                                        Next: {new Date(sub.nextPaymentDate).toLocaleDateString()}                                        
+                                        Next: {formatCalendarDate(sub.nextPaymentDate)}
                                     </p>
                                 </div>
                             </div>
@@ -107,7 +106,7 @@ function ActiveSubscriptions({subscriptions, onEdit, onDelete}: ActiveSubscripti
                                         title="Delete subscription"
                                     >
                                         <Trash2 size={18} />
-                                    </button>    
+                                    </button>
                                 </div>
                             </div>
                         </div>

@@ -1,35 +1,18 @@
-import { useMemo } from "react"
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
-import type { Transaction } from "../../types/finance"
 import { useSettings } from "../../hooks/useSettings";
 
 interface CategoryPieChartProps {
-    transactions: Transaction[];
+    categories: {category:string; amount_usd:string}[];
 }
 
 // Colors for Recharts
 const COLORS = ['#3b82f6', '#10b981', '#ef4444', '#f59e0b', '#6366f1', '#ec4899'];
 
-function CategoryPieChart({transactions}: CategoryPieChartProps){
+function CategoryPieChart({categories}: CategoryPieChartProps){
 
     const {formatAmount} = useSettings();
 
-    //Filtering only Expenses
-    const chartData = useMemo(() => {
-        const expenses = transactions.filter((t) => t.type === 'expense'); 
-
-        //Groupping sums by categories
-        const totals = expenses.reduce((acc, t) => {
-            acc[t.category] = (acc[t.category] || 0) + t.amount;
-            return acc;
-        }, {} as Record<string, number>);
-
-        //Converting object ot array, which will be appropriate for Recharts
-        return Object.keys(totals).map((category) => ({
-            name: category,
-            value: totals[category], 
-        }));
-    }, [transactions]);
+    const chartData = categories.map(item => ({name:item.category, value:Number(item.amount_usd)}));
 
     return(
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm p-6 min-h-[420px] md:h-80 flex flex-col">
@@ -38,7 +21,7 @@ function CategoryPieChart({transactions}: CategoryPieChartProps){
             </h3>
 
             <div className="flex-1 min-h-0">
-                <ResponsiveContainer width="100%" height="100%">
+                {chartData.length === 0 ? <p className="text-slate-400 text-sm">No expenses in this period.</p> : <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
                         <Pie
                             data = {chartData}
@@ -66,7 +49,7 @@ function CategoryPieChart({transactions}: CategoryPieChartProps){
                         />
                         <Legend />
                     </PieChart>
-                </ResponsiveContainer>
+                </ResponsiveContainer>}
             </div>
         </div> 
     );

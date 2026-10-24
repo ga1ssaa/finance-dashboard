@@ -1,4 +1,7 @@
-import { useState } from "react";
+import { UnknownWriteOutcomeError } from "../../api/client";
+import { localDate } from "../../utils/dates";
+import { useRef, useState } from "react";
+import { fromUSD, toUSD } from "../../utils/money";
 import { X } from "lucide-react";
 import type { Subscription } from "../../types/finance";
 import { useSettings, CURRENCY_SYMBOLS } from "../../hooks/useSettings";
@@ -6,39 +9,48 @@ import { useSettings, CURRENCY_SYMBOLS } from "../../hooks/useSettings";
 interface SubscriptionModalProps {
     isOpen: boolean;
     onClose: () => void;
-    onSubmit: (subscription: Omit<Subscription, 'id' | 'icon'>) => void;
+    onSubmit: (subscription: Omit<Subscription, 'id' | 'icon'>) => Promise<void>;
     initialData?: Subscription | null;
 }
 
 function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: SubscriptionModalProps){
 
-    const {currency, convertAmount, toBaseCurrency} = useSettings();
+    const settings = useSettings();
+    const [currency] = useState(settings.currency);
+    const [rate] = useState(String(settings.rates[settings.currency]));
+    const [saving, setSaving] = useState(false);
+    const [unknownOutcome, setUnknownOutcome] = useState(false);
+    const [error, setError] = useState('');
+    const submitting = useRef(false);
+    const [amountDirty, setAmountDirty] = useState(false);
 
     // Initialize state directly from initialData (if it exists)
     const [serviceName, setServiceName] = useState(initialData?.serviceName || '');
     
     const [amount, setAmount] = useState(() => {
         if (!initialData?.amount) return '';
-        const converted = convertAmount(initialData.amount);
-        return currency === 'KZT' || currency === 'RUB' 
-            ? Math.round(converted).toString() 
-            : converted.toFixed(2);
+        return fromUSD(initialData.amount, rate);
     });
 
     const [nextPaymentDate, setNextPaymentDate] = useState(
-        initialData?.nextPaymentDate || new Date().toISOString().split('T')[0]
+        initialData?.nextPaymentDate || localDate()
     );
 
     const [status, setStatus] = useState<'active' | 'paused'>(initialData?.status || 'active');
 
     if (!isOpen) return null;
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!serviceName || !amount || !nextPaymentDate) return;
+        if (submitting.current || unknownOutcome) return;
+        submitting.current = true; setSaving(true); setError('');
+        try {
+        if (!serviceName.trim() || !amount || !nextPaymentDate) throw new Error('Service name, amount and payment date are required.');
 
-        onSubmit({serviceName,amount: toBaseCurrency(parseFloat(amount)),nextPaymentDate,status});
+        await onSubmit({serviceName,amount: initialData && !amountDirty ? initialData.amount : toUSD(amount, rate),nextPaymentDate,status});
         onClose();
+        } catch (error) { setError(error instanceof Error ? error.message : 'Save failed. Please retry.'); if (error instanceof UnknownWriteOutcomeError) { setUnknownOutcome(true); settings.refresh(); } }
+        finally { submitting.current = false; setSaving(false); }
     };
 
     return (
@@ -50,7 +62,7 @@ function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: Subscript
                         {initialData ? 'Edit Subscription' : 'Add Subscription'}
                     </h2>
                     <button
-                        onClick={onClose}
+                        onClick={onClose} disabled={saving}
                         className="p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 transition-colors cursor-pointer"
                     >
                         <X size={20} />
@@ -59,6 +71,8 @@ function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: Subscript
 
                     {/* Modal Body / Form */}
                     <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                        {error && <p role="alert" className="text-red-500 text-sm">{error}</p>}
+                    {unknownOutcome && <button type="button" className="text-blue-600 underline text-sm" onClick={() => {setUnknownOutcome(false); setError('');}}>I checked saved records; allow another save</button>}
                         <div>
                             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
                             Service Name
@@ -82,13 +96,14 @@ function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: Subscript
                                     {CURRENCY_SYMBOLS[currency]} 
                             </span>
                                 <input
-                                    type="number"
+                                    type="text"
+                                        inputMode="decimal"
                                     required
                                     min="0"
                                     step="0.01"
                                     placeholder="0.00"
                                     value={amount}
-                                    onChange={(e) => setAmount(e.target.value)}
+                                    onChange={(e) => { setAmount(e.target.value); setAmountDirty(true); }}
                                     className="w-full pl-8 pr-4 py-2.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 text-slate-800 dark:text-white transition-colors"
                                 />
                             </div>
@@ -125,13 +140,14 @@ function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: Subscript
                         <div className="flex items-center justify-end gap-3 pt-4">
                             <button
                                 type="button"
-                                onClick={onClose}
+                                onClick={onClose} disabled={saving}
                                 className="px-4 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors cursor-pointer"
                             >
                                 Cancel
                             </button>
                             <button
                                 type="submit"
+                            disabled={saving || unknownOutcome}
                                 className="px-4 py-2.5 text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl transition-colors shadow-sm cursor-pointer"
                             >
                                 {initialData ? 'Save Changes' : 'Add Subscription'}

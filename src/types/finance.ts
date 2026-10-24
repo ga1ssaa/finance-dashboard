@@ -1,20 +1,20 @@
 export type TransactionType = 'income' | 'expense';
 
-export type CategoryType = | 'Food' | 'Transport' | 'Rent' | 'Salary' | 'Freelance' | 'Other';
+export type CategoryType = string;
 
 export interface Transaction {
-    id: number;
+    id: string;
     title: string;
-    amount: number;
+    amount: string;
     type: TransactionType;
     category: CategoryType;
     date: string;
 }
 
 export interface Subscription {
-    id: number | string;
+    id: string;
     serviceName: string;
-    amount: number;
+    amount: string;
     nextPaymentDate: string;
     icon: string;
     status: 'active' | 'paused';
