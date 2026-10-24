@@ -50,6 +50,7 @@ def fingerprint(url):
 
 
 def main():
+    raise RuntimeError("The Phase4 database fixture is retired. Use the separately approved Phase5 fixture workflow.")
     settings, source = config()
     mode = sys.argv[1]
     if mode == "verify":
