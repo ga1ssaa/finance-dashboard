@@ -1,4 +1,6 @@
+import { authenticatedFetch, configureAuthApi, getSessionEpoch, SessionChangedError, SessionExpiredError } from './authSession';
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1').replace(/\/$/, '');
+configureAuthApi(API_BASE_URL);
 function validateLocalApi() {
     const url = new URL(API_BASE_URL);
     if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
@@ -13,15 +15,17 @@ export class UnknownWriteOutcomeError extends Error {
 }
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     validateLocalApi();
+    const epoch = getSessionEpoch();
     const isWrite = Boolean(options.method && options.method !== 'GET');
     let response: Response;
     try {
-        response = await fetch(`${API_BASE_URL}${path}`, {
+        response = await authenticatedFetch(`${API_BASE_URL}${path}`, {
             ...options,
             headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers },
         });
     }
     catch (error) {
+        if (error instanceof SessionChangedError || error instanceof SessionExpiredError) throw error;
         if (isWrite)
             throw new UnknownWriteOutcomeError(error);
         if (error instanceof DOMException && error.name === 'AbortError')
@@ -30,6 +34,7 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
     }
     if (!response.ok) {
         const payload = await response.json().catch(() => null);
+        if (epoch !== getSessionEpoch()) throw new SessionChangedError();
         const detail = payload?.detail;
         throw new Error(typeof detail === 'string' ? detail : Array.isArray(detail)
             ? detail.map((item: {
@@ -40,9 +45,12 @@ export async function request<T>(path: string, options: RequestInit = {}): Promi
     if (response.status === 204)
         return undefined as T;
     try {
-        return await response.json() as T;
+        const result = await response.json() as T;
+        if (epoch !== getSessionEpoch()) throw new SessionChangedError();
+        return result;
     }
     catch (error) {
+        if (error instanceof SessionChangedError || error instanceof SessionExpiredError) throw error;
         if (isWrite)
             throw new UnknownWriteOutcomeError(error);
         throw new Error('The API returned an unreadable response. Please retry.', { cause: error });

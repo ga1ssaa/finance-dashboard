@@ -9,7 +9,10 @@ async function moduleFrom(path, replace = value => value) {
   const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
   return import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`);
 }
-const client = await moduleFrom('../src/api/client.ts', source => source.replace('import.meta.env.VITE_API_BASE_URL', '"http://127.0.0.1:18084/api/v1"'));
+// Isolate transport contracts from authentication; actual auth behavior is tested separately.
+const client = await moduleFrom('../src/api/client.ts', source => source
+  .replace(/^import .*from '.\/authSession';$/m, 'const authenticatedFetch=(...args)=>fetch(...args); const configureAuthApi=()=>{}; const getSessionEpoch=()=>0; class SessionChangedError extends Error {} class SessionExpiredError extends Error {}')
+  .replace('import.meta.env.VITE_API_BASE_URL', '"http://127.0.0.1:18084/api/v1"'));
 
 test('money preserves canonical precision and aggregate range', () => {
   assert.equal(decimal(units('999999999999.99999999')), '999999999999.99999999');
