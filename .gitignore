@@ -12,6 +12,16 @@ dist
 dist-ssr
 *.local
 
+# Private configuration, Python caches and database backup archives
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.dump
+*.backup
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

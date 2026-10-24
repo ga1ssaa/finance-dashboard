@@ -195,7 +195,6 @@ The application is optimized for
 
 # 🚀 Future Improvements
 
-- Authentication
 - Cloud database
 - Multi-currency support
 - Export to PDF
@@ -232,7 +231,15 @@ npm install
 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
 
-`VITE_API_BASE_URL` defaults to `http://127.0.0.1:8000/api/v1`. The client accepts loopback API URLs only; use the backend CORS configuration for a different local frontend port. Restart Vite after changing its environment. This is a local, single-owner application without authentication; do not expose it publicly.
+`VITE_API_BASE_URL` defaults to `http://127.0.0.1:8000/api/v1`. The client accepts loopback API URLs only; use the backend CORS configuration for a different local frontend port. Restart Vite after changing its environment. This is a local authenticated application; do not expose this development setup publicly. Use `127.0.0.1` for both Vite and the API (or `localhost` for both) so the host-only refresh cookie works across their ports.
+
+Sign in at `/login` or create an account at `/register`. New registrations start with an empty account. Existing records in the former single-owner namespace are not automatically assigned to registered users.
+
+Access JWTs live only in application memory. Reloading restores the session using the server's HttpOnly refresh cookie. Auth cookie requests include credentials and the required CSRF protection header; ordinary financial requests use the access token. Logout clears the in-memory financial views, drafts, and session and revokes the cookie session. If server logout cannot be confirmed, the app remains gated with a retry action.
+
+Refresh is shared across simultaneous requests in one tab, and cookie-changing operations are serialized. A confirmed authentication rejection may refresh and retry a financial request once. Network failures and ambiguous writes are never automatically retried. Account changes invalidate pending responses before they can populate another account's view.
+
+Multiple tabs share a refresh cookie but do not coordinate refresh rotation. Simultaneous refreshes across tabs may expire the session and require signing in again. Use one active tab for this local setup.
 
 Transactions and subscriptions are paginated and filtered by the server. Dashboard cards and category charts use full-set backend aggregates, and recurring costs use the backend subscription summary. Successful mutations invalidate active views. Offline/API errors show retry controls and never fall back to demo records. Forms remain open with their input on failed saves.
 
@@ -245,11 +252,7 @@ Validation (Node.js 24 for the built-in TypeScript test loader):
 ```bash
 npm run lint
 npm run build
-node --test tests/phase4.test.mjs
+node --test tests/phase4.test.mjs tests/phase5-auth.test.mjs
 ```
 
-The opt-in live HTTP test in `tests/phase4-api.test.mjs` requires the disposable test API started by `tests/phase4_server.py` and its pagination seed. It uses port 18084 and the generated temporary database, never the normal development API. Once that isolated fixture is ready, run:
-
-```bash
-RUN_PHASE4_E2E=1 node --test tests/phase4-api.test.mjs
-```
+`tests/phase4-api.test.mjs` and its fixture describe the earlier unauthenticated integration phase; they are historical and are superseded by the authenticated Phase 5 checks. Do not point a historical fixture at normal development data.

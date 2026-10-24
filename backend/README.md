@@ -5,11 +5,17 @@ Pydantic 2. The backend supplies versioned CRUD endpoints, owner-scoped financia
 aggregates, persisted budget inputs and display preferences, database sessions,
 migrations, and health endpoints.
 
-This is a local single-user API with no authentication. Bind it to
-`127.0.0.1`; exposing it publicly is unsafe. `SINGLE_OWNER_ID` is required server
-configuration, not a client parameter or authentication credential. Keep it
-stable to retain access to the same namespace. Every record lookup, mutation,
-and aggregate is scoped to it; API responses never expose ownership IDs.
+Authentication isolates each account's financial namespace. Every financial
+route requires a short-lived Bearer token and checks its active server session;
+health checks and interactive documentation remain public. Bind the development
+API to `127.0.0.1`. Production startup is deliberately blocked until a shared
+rate limiter and an approved reverse-proxy contract are implemented.
+
+Existing owners and financial records are preserved and remain unclaimed.
+Registration always creates a fresh owner. `SINGLE_OWNER_ID` is no longer used
+for routing or authorization; leaving an old value in a private `.env` does not
+grant access. Any transfer of legacy records needs a separately reviewed,
+explicitly approved manual migration. This phase performs no such transfer.
 
 Run the following commands from `backend/` unless stated otherwise.
 
@@ -35,7 +41,6 @@ import os
 from pathlib import Path
 import secrets
 from urllib.parse import quote
-from uuid import uuid4
 
 user = "finance_local"
 database = "finance_dashboard"
@@ -46,7 +51,8 @@ content = (
     f"POSTGRES_DB={database}\n"
     f"DATABASE_URL=postgresql+psycopg://{quote(user, safe='')}:{quote(password, safe='')}"
     f"@127.0.0.1:5434/{quote(database, safe='')}\n"
-    f"SINGLE_OWNER_ID={uuid4()}\n"
+    f"AUTH_JWT_SECRET={secrets.token_urlsafe(48)}\n"
+    f"APP_ENV=development\n"
 )
 descriptor = os.open(Path(".env"), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
 with os.fdopen(descriptor, "w") as file:
@@ -63,11 +69,16 @@ The application and Alembic resolve `.env` relative to this backend directory,
 independent of the working directory. Explicit process environment variables
 override the file. `DATABASE_URL` is required and must use
 `postgresql+psycopg`, with a host and database. Settings representations mask
-the URL; do not log its unwrapped value. `SINGLE_OWNER_ID` must be a valid UUID.
-For an existing private `.env`, add a generated UUID without printing the file.
+the URL; do not log its unwrapped value. `AUTH_JWT_SECRET` is required, must
+contain at least 32 UTF-8 bytes, and has no fallback. Generate it privately
+with `secrets.token_urlsafe(48)`; preserve an existing key rather than replacing
+it during setup. Never print the key or commit it. `APP_ENV` defaults to
+`development`; `test` is also available. `production` startup is blocked.
 
 The React development server may call the API from `http://localhost:5173` or
-`http://127.0.0.1:5173` by default. `CORS_ALLOWED_ORIGINS` optionally overrides
+`http://127.0.0.1:5173` by default. The explicit API origin
+`http://127.0.0.1:8000` also permits the Swagger UI's auth requests.
+`CORS_ALLOWED_ORIGINS` optionally overrides
 this exact allowlist using a JSON array, for example
 `CORS_ALLOWED_ORIGINS=["http://127.0.0.1:5174"]` for a different Vite port.
 Start Vite with `npm run dev -- --strictPort` to avoid silently switching away
@@ -76,8 +87,11 @@ Only `http://` or `https://` origins on `localhost`, `127.0.0.1`, or `[::1]`
 with an explicit port from 1 through 65535 are accepted. URLs with paths,
 trailing slashes, credentials, queries, fragments, wildcards, or public hosts
 are rejected at startup. Set `CORS_ALLOWED_ORIGINS=[]` to disable cross-origin
-access. Browser credentials are disabled; permitted cross-origin API methods
-are GET, POST, PATCH, and DELETE, with the Content-Type request header.
+access. Browser credentials are enabled only for exact configured origins;
+permitted cross-origin API methods are GET, POST, PATCH, and DELETE, with
+Content-Type, Authorization, and X-CSRF-Protection headers. Use the same hostname
+for frontend and backend (for example `127.0.0.1` for both) so SameSite cookies
+work. A custom API port must be added explicitly for Swagger auth requests.
 CORS controls browser access, and does not replace authentication or a local bind.
 
 Start a fresh local PostgreSQL service:
@@ -94,15 +108,20 @@ Avoid printing `docker compose config`, which can expose substituted secrets.
 
 ## Apply migrations and run
 
-For the local database configured above:
+Migration `0003_auth` only adds `users`, `auth_sessions`, and
+`auth_refresh_tokens` with their own constraints and indexes. It does not alter
+or update owners, financial tables, or existing rows. Apply migrations only
+after explicit approval of the target and a preservation snapshot; verify on
+a fresh disposable database first. For an approved target:
 
 ```sh
 alembic upgrade head
-uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000
+uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --no-proxy-headers
 ```
 
 Revision `0001_infrastructure` establishes Alembic's version baseline;
-`0002_models` creates the five model tables described below. Application
+`0002_models` creates the five financial model tables described below;
+`0003_auth` adds authentication. Application
 startup never connects to the database, creates tables, or applies migrations.
 Engine creation is lazy; its pool is disposed when the application shuts down.
 
@@ -110,7 +129,7 @@ From the repository root, use the explicit config and application paths:
 
 ```sh
 backend/.venv/bin/alembic -c backend/alembic.ini current
-backend/.venv/bin/uvicorn --app-dir backend app.main:create_app --factory --host 127.0.0.1 --port 8000
+backend/.venv/bin/uvicorn --app-dir backend app.main:create_app --factory --host 127.0.0.1 --port 8000 --no-proxy-headers
 ```
 
 Preview migration SQL without connecting:
@@ -139,10 +158,14 @@ confirmed empty local target described under Tests.
 | `subscriptions` / `Subscription` | Owner, nonblank service name, nonnegative `amount_usd`, date-only next payment, nonblank icon (default `credit-card`), and active/paused status (default active). Dates are maintained manually. |
 | `budget_profiles` / `BudgetProfile` | At most one per owner, with independent monthly income, needs spent, wants spent, and savings USD amounts, each defaulting to zero. No transaction aggregation or month history. |
 | `preferences` / `Preferences` | At most one per owner, with USD/KZT/EUR/RUB display currency, default USD. Theme remains browser-local. |
+| `users` / `User` | Unique normalized email, Argon2id password hash, unique owner reference. |
+| `auth_sessions` / `AuthSession` | User reference, absolute 30-day family expiry, optional revocation timestamp. |
+| `auth_refresh_tokens` / `AuthRefreshToken` | Unique SHA-256 token hash, family reference, expiry and optional used timestamp. Raw refresh tokens are never persisted. |
 
-All five models have their own UUID primary key, generated by Python `uuid4`
+All models have their own UUID primary key, generated by Python `uuid4`
 when the ORM inserts a row. No database UUID extension or server UUID default
-is needed; raw SQL inserts must explicitly supply IDs. Every column is nonnull.
+is needed; raw SQL inserts must explicitly supply IDs. Financial columns are nonnull;
+auth revocation and token-use timestamps are nullable.
 Budget and preferences each have a separate named unique constraint on
 `owner_id`. Owners may exist without any child records.
 
@@ -151,8 +174,7 @@ relationships use `back_populates`; owner collections and one-to-one relationshi
 use `passive_deletes="all"` and have no delete/delete-orphan cascade. Deleting an
 owner with children fails even when those children have already been loaded.
 Deletion would need an explicitly designed service and authorization policy.
-Owner foreign keys are an ownership boundary in the schema, not an authentication
-or authorization implementation.
+Owner foreign keys provide the boundary used by authenticated API services.
 
 All money columns use `NUMERIC(20,8)` and Python `Decimal`: twelve integer digits
 and eight fractional digits, in USD base currency. Checks reject PostgreSQL `NaN`,
@@ -193,7 +215,62 @@ Interactive API documentation is available at `http://127.0.0.1:8000/docs`.
 Request sessions come from `app.db.get_session`; they close after the request,
 and routes commit successful writes before returning. Services do not commit.
 
-## API contract
+## Authentication contract
+
+`POST /api/v1/auth/register` and `/login` take `{email,password}` JSON and return
+`{access_token,token_type:"bearer",expires_in:300,user:{id,email}}` (201/200).
+Email is normalized by stripping outer whitespace and lowercasing ASCII. Passwords
+must contain 15–128 Unicode characters, fit 512 UTF-8 bytes, and are never trimmed
+or truncated. Stored Argon2id hashes use 65536 KiB memory, time cost 3, parallelism
+1, 32-byte output and a random 16-byte salt. Unknown accounts still verify a
+dummy Argon2id hash. Wrong logins return the same generic 401; duplicate accounts
+return generic 409. Validation responses omit raw inputs and error context.
+
+All authentication POST requests require an exact configured `Origin` and
+`X-CSRF-Protection: 1`; missing, null or foreign origins return 403. Register/login
+also require `Content-Type: application/json` (415 otherwise). Same-origin
+Swagger auth calls use the explicit API origin above; set the CSRF header to `1`.
+Token and user responses, including auth errors, have `Cache-Control: no-store`
+and `Pragma: no-cache`. Do not log request bodies, Authorization headers, cookies,
+access tokens or passwords.
+
+`POST /api/v1/auth/refresh` takes no body and rotates the `fd_refresh` cookie.
+`POST /api/v1/auth/logout` takes no body, revokes that cookie's entire session
+family, and returns 204 even for an unknown/missing cookie. `GET /api/v1/auth/me`
+requires Bearer authorization and returns only `{id,email}`. Access JWTs are
+HS256-only with issuer `finance-dashboard`, audience `finance-dashboard-web`,
+UUID subject/session/token IDs, access type, and required issued/not-before/expiry
+times (five-second leeway). They expire after five minutes; every protected request
+also checks that the referenced session is active and unexpired, using a separate
+short-lived read session.
+
+Refresh tokens have 256 random bits, are hashed with SHA-256 for storage, and live
+up to seven days within a 30-day absolute session lifetime. Rotation locks the
+family before its token, marks the old token used, and commits before issuing a
+new cookie/token. Used tokens are retained to detect replay; replay revokes the
+family and commits before returning 401. Logout likewise revokes the family,
+including when presented an old used token. There is no replay grace period;
+clients must serialize refresh, login, register and logout cookie operations.
+
+The host-only cookie is HttpOnly, SameSite=Lax, and scoped to `/api/v1/auth`.
+Local HTTP uses Secure=false; the production cookie helper uses Secure=true.
+Cookie deletion repeats the same attributes. The browser client keeps access
+tokens in memory and sends `credentials: include` for auth cookie requests.
+
+A bounded process-local limiter uses the ASGI client IP: login 20/IP/minute
+and 5/normalized-email/minute, registration 5/IP/hour, refresh and logout each
+30/IP/minute. Invalid credentials and malformed requests from a permitted origin
+with the CSRF header count; cross-site requests are rejected before quota use.
+Limits use monotonic time, locks, TTL expiry
+and at most 10000 keys; a full active key set fails closed. Rejections return 429
+with Retry-After. Production startup remains blocked pending a shared limiter and
+an approved proxy/client-IP contract. The development commands above explicitly
+disable Uvicorn proxy-header processing; retain `--no-proxy-headers` so an
+untrusted forwarded header cannot change the client IP used by the limiter.
+Recovery, email verification, MFA and breached
+password checking are future production hardening, not implemented endpoints.
+
+## Financial API contract
 
 All routes below use `/api/v1`. UUID path parameters, unsupported enum values,
 unknown body fields (including `owner_id`), explicit PATCH nulls, and empty PATCH
@@ -211,11 +288,12 @@ Audit timestamps are returned in UTC RFC3339 format.
 | `GET/PATCH /preferences` | `display_currency`: USD, KZT, EUR, or RUB. |
 | `GET /dashboard` | `income_usd`, `expenses_usd`, `balance_usd`, `transaction_count`, `expense_by_category` entries with `category`/`amount_usd`. |
 
-First successful transaction/subscription creation atomically inserts the owner
-if missing. Ordinary list/detail/aggregate reads create nothing. Budget and
-preferences persist zero/USD defaults on their first GET or PATCH, atomically
-with owner creation. Unique constraints and PostgreSQL `ON CONFLICT DO NOTHING`
-make bootstrap safe for concurrent requests. Invalid requests create no records.
+Registration creates the authenticated account's fresh owner atomically.
+Ordinary list/detail/aggregate reads create nothing. Budget and preferences
+persist zero/USD defaults on their first GET or PATCH within that account's
+namespace. Unique constraints and PostgreSQL `ON CONFLICT DO NOTHING` make
+singleton bootstrap safe for concurrent requests. Unauthorized or invalid
+requests create no financial records.
 
 Send all money as JSON **strings**, using unsigned base-10 digits and an optional
 decimal point with one to eight fractional digits. Up to twelve
@@ -249,11 +327,13 @@ invalid input 422. Responses omit SQL, connection strings, and tracebacks.
 
 ```sh
 curl --fail http://127.0.0.1:8000/api/v1/transactions \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'Content-Type: application/json' \
   --data '{"title":"Groceries","amount_usd":"24.50","type":"expense","category":"Food","transaction_date":"2026-10-24"}'
-curl --fail 'http://127.0.0.1:8000/api/v1/transactions?type=expense&limit=20&sort_by=amount_usd&sort_direction=desc'
-curl --fail 'http://127.0.0.1:8000/api/v1/dashboard?date_from=2026-10-01&date_to=2026-10-31'
+curl --fail -H "Authorization: Bearer $ACCESS_TOKEN" 'http://127.0.0.1:8000/api/v1/transactions?type=expense&limit=20&sort_by=amount_usd&sort_direction=desc'
+curl --fail -H "Authorization: Bearer $ACCESS_TOKEN" 'http://127.0.0.1:8000/api/v1/dashboard?date_from=2026-10-01&date_to=2026-10-31'
 curl --fail -X PATCH http://127.0.0.1:8000/api/v1/preferences \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H 'Content-Type: application/json' --data '{"display_currency":"KZT"}'
 ```
 
@@ -264,21 +344,28 @@ python -m pytest
 ```
 
 Tests live in `tests/`. The default suite skips database integration checks.
-After explicitly confirming the local test target and applying its migrations
-separately, enable those checks from `backend/`:
+New authentication integration tests run only against a separately prepared,
+explicitly approved disposable database identified by the guarded Phase 5 test
+state. Preparation uses `tests/phase5_server.py` from the repository root; it
+creates a new unique test database and migrates that database, never development
+data. After preparation, run the auth tests from `backend/`:
 
 ```sh
-RUN_DATABASE_TESTS=1 python -m pytest
+RUN_DATABASE_TESTS=1 python -m pytest tests/test_auth_database.py
 ```
 
-The database suite accepts only the PostgreSQL/psycopg target
-`127.0.0.1:5434`, database `finance_dashboard`, at revision `0002_models`, with
-exactly the five business tables plus `alembic_version` in the public schema.
-It requires every business table to be empty before tests begin. Tests do not
-apply migrations, launch the application, or wipe tables. Test rows stay inside
-an externally owned transaction with session savepoints and are rolled back
-after each test. Never point these checks at an existing personal or production
-database.
+Model, finance API and authentication integration tests share the guarded
+Phase 5 fixture in `tests/conftest.py`. It requires the private test manifest
+at stage `ready`, the exact approved disposable database
+`finance_dashboard_phase5_f0e1554a4e98` on `127.0.0.1:5434`, the expected nine
+tables and revision `0003_auth`. It cannot fall back to `finance_dashboard`.
+These fixtures do not apply migrations or wipe tables. Model/finance test rows
+stay inside an externally owned transaction with session savepoints and are
+rolled back after each test. Authentication tests commit only inside their
+disposable target to verify logout and replay revocation across independent
+connections. Never point these checks at development, personal or production
+data. Setting `RUN_DATABASE_TESTS=1` is not approval to prepare or modify a
+database; every live run requires separate approval of its exact target.
 
 A manual upgrade/downgrade rollback proof, when separately authorized, must
 first lock all five empty business tables in an external transaction and confirm
@@ -287,6 +374,60 @@ they are empty. Pass that connection to Alembic, downgrade to
 transaction and verify the original schema and revision remain. This checks DDL
 reversibility without committing the downgrade. Never downgrade a populated
 database. The regular tests do not perform this manual proof.
+
+## Verification tools and approval boundary
+
+`backend/verification/` contains import-safe tools for separately approved
+verification. Importing them does not inspect Docker, connect to PostgreSQL,
+reserve a database name, or run a proof. Static and mocked tests can review
+the guards without a running Docker daemon or database. These tools are not
+application startup hooks and do not run automatically.
+
+The frozen backup/restore fingerprint workflow in `verification/backup_safety.py`
+accepts only revision `0002_models`; it intentionally rejects the development
+schema now at `0003_auth`. Future backup/restore work requires separately
+reviewed targets and explicit approval.
+
+The read-only entry point, when read-only inspection is authorized, is:
+
+```sh
+backend/.venv/bin/python backend/verification/read_only_inspect.py
+```
+
+It checks only `backend-postgres-1` through the local account's explicit Docker
+Desktop Unix socket. Container name, Compose project `backend`, service
+`postgres`, running/healthy state, and the live `5432/tcp` binding must match
+exactly `127.0.0.1:5434`. Docker context/host environment overrides are rejected.
+It connects to maintenance `postgres` with forced read-only transactions to
+list only database names matching `finance_dashboard_phase5_[0-9a-f]{12}`, then
+connects read-only to `finance_dashboard` for revision, table names, financial
+row counts and row hashes. No row values or connection credentials are printed.
+
+The migration proof is `backend/verification/auth_migration_proof.py`. Execution
+requires separate explicit approval of its full current contents and one literal
+`--database finance_dashboard_phase5_<12 lowercase hex digits>` argument. It
+never generates a hidden target, resumes an old proof, or reuses an uncertain
+database. Do not execute it merely to inspect or test the script.
+
+Both tools reject every URL query/fragment and every `PG*` routing environment
+variable rather than relying on libpq precedence. They construct canonical
+loopback connection parameters and verify the actual database before handing
+out connections. `finance_dashboard` is permitted only through a forced
+read-only engine; writable targets must match the disposable namespace. All
+critical guards use explicit exceptions and remain active under `python -O`.
+
+Before `CREATE DATABASE`, the proof exclusively reserves its exact identifier
+in `backend/auth-migration-proof.local`, with mode 0600 and file/directory fsync.
+A second exclusive creation claim prevents concurrent or interrupted retries.
+Progress updates use atomic replace and fsync; reservations remain on failure.
+Creation uses only maintenance `postgres` with AUTOCOMMIT. Duplicate creation
+aborts before any target connection. The new database is migrated to `0002`,
+seeded with five synthetic legacy records, fingerprinted, then upgraded to
+`0003` and checked for preserved records, unclaimed legacy ownership, and ORM
+consistency. The development fingerprint is compared before and after. No
+drop, reset, downgrade, deletion, or automatic cleanup is implemented. A prior
+interrupted proof has an unknown execution outcome until separately authorized
+read-only inspection establishes what exists.
 
 ## Stop local PostgreSQL
 
