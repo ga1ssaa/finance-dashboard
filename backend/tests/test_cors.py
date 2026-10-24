@@ -33,17 +33,17 @@ def test_default_local_origin_preflight_and_response(origin, engine):
         preflight = client.options("/api/v1/transactions", headers={
             "Origin": origin,
             "Access-Control-Request-Method": "POST",
-            "Access-Control-Request-Headers": "content-type",
+            "Access-Control-Request-Headers": "content-type, authorization, x-csrf-protection",
         })
         assert preflight.status_code == 200
         assert preflight.headers["access-control-allow-origin"] == origin
         assert set(preflight.headers["access-control-allow-methods"].split(", ")) == {"GET", "POST", "PATCH", "DELETE"}
-        assert "access-control-allow-credentials" not in preflight.headers
+        assert preflight.headers["access-control-allow-credentials"] == "true"
         response = client.get("/api/v1/health", headers={"Origin": origin})
         assert response.json() == {"status": "ok"}
         assert response.headers["access-control-allow-origin"] == origin
         assert "Origin" in response.headers["vary"]
-        assert "access-control-allow-credentials" not in response.headers
+        assert response.headers["access-control-allow-credentials"] == "true"
         engine.connect.assert_not_called()
 
 

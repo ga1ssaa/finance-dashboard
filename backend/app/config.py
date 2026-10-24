@@ -2,7 +2,7 @@
 
 import re
 from pathlib import Path
-from uuid import UUID
+from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -23,11 +23,19 @@ class Settings(BaseSettings):
     )
 
     database_url: SecretStr = Field(validation_alias="DATABASE_URL", repr=False)
-    single_owner_id: UUID = Field(validation_alias="SINGLE_OWNER_ID", repr=False)
+    auth_jwt_secret: SecretStr = Field(validation_alias="AUTH_JWT_SECRET", repr=False)
+    app_env: Literal["development", "test", "production"] = Field(default="development", validation_alias="APP_ENV")
     cors_allowed_origins: tuple[str, ...] = Field(
-        default=("http://localhost:5173", "http://127.0.0.1:5173"),
+        default=("http://localhost:5173", "http://127.0.0.1:5173", "http://127.0.0.1:8000"),
         validation_alias="CORS_ALLOWED_ORIGINS",
     )
+
+    @field_validator("auth_jwt_secret")
+    @classmethod
+    def validate_auth_jwt_secret(cls, secret: SecretStr) -> SecretStr:
+        if len(secret.get_secret_value().encode("utf-8")) < 32:
+            raise ValueError("AUTH_JWT_SECRET must contain at least 32 UTF-8 bytes")
+        return secret
 
     @field_validator("cors_allowed_origins")
     @classmethod

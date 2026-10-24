@@ -5,5 +5,6 @@ from app.models.owner import Owner
 from app.models.preferences import Preferences
 from app.models.subscription import Subscription
 from app.models.transaction import Transaction
+from app.models.auth import AuthRefreshToken, AuthSession, User
 
-__all__ = ["Owner", "Transaction", "Subscription", "BudgetProfile", "Preferences"]
+__all__ = ["Owner", "Transaction", "Subscription", "BudgetProfile", "Preferences", "User", "AuthSession", "AuthRefreshToken"]

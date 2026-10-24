@@ -20,32 +20,17 @@ TABLES = {"owners", "transactions", "subscriptions", "budget_profiles", "prefere
 
 
 @pytest.fixture(scope="module")
-def engine():
-    settings = Settings()
-    url = make_url(settings.database_url.get_secret_value())
-    assert (url.drivername, url.host, url.port, url.database) == ("postgresql+psycopg", "127.0.0.1", 5434, "finance_dashboard"), "Refusing unapproved database target"
-    value = create_database_engine(settings)
-    try:
-        with value.connect() as connection:
-            connection.execute(text("SET TRANSACTION READ ONLY"))
-            assert connection.scalar(text("SELECT current_database()")) == "finance_dashboard"
-            assert set(inspect(connection).get_table_names(schema="public")) == TABLES | {"alembic_version"}
-            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalars().all() == ["0002_models"]
-            for table in TABLES:
-                assert connection.scalar(text(f'SELECT count(*) FROM "{table}"')) == 0, "Requires empty local business tables; never deletes existing rows"
-        yield value
-        with value.connect() as connection:
-            for table in TABLES:
-                assert connection.scalar(text(f'SELECT count(*) FROM "{table}"')) == 0, "Test writes escaped rollback"
-    finally:
-        value.dispose()
+def engine(phase5_engine):
+    yield phase5_engine
 
 
 @pytest.fixture
-def api(engine):
+def api(engine, phase5_settings, guarded_app):
     owner_id = uuid4()
-    settings = Settings(SINGLE_OWNER_ID=owner_id)
-    app = create_app(settings)
+    settings = phase5_settings
+    app = guarded_app()
+    from app.api.finance import get_owner_id
+    app.dependency_overrides[get_owner_id] = lambda: owner_id
     with engine.connect() as connection:
         outer = connection.begin()
         session = Session(bind=connection, join_transaction_mode="create_savepoint", expire_on_commit=False)

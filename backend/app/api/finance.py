@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from sqlalchemy.orm import Session
 
 from app.db import get_session
+from app.auth import AuthenticatedUser, get_current_user
 from app.models import BudgetProfile, Preferences, Subscription, Transaction
 from app.schemas import (
     BudgetPatch, BudgetResponse, DashboardResponse, DateRange, PreferencesPatch,
@@ -21,10 +22,10 @@ router = APIRouter(prefix="/api/v1")
 SessionDependency = Annotated[Session, Depends(get_session)]
 
 
-def get_owner_id(request: Request) -> UUID:
+def get_owner_id(request: Request, user: Annotated[AuthenticatedUser, Depends(get_current_user)]) -> UUID:
     if "owner_id" in request.query_params:
         raise HTTPException(status_code=422, detail="owner_id is not a client parameter")
-    return request.app.state.settings.single_owner_id
+    return user.owner_id
 
 
 OwnerDependency = Annotated[UUID, Depends(get_owner_id)]

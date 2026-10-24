@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
+from app.api.finance import get_owner_id
 from app.config import Settings
 from app.db import get_session
 from app.main import create_app
@@ -16,6 +17,7 @@ def client(monkeypatch):
     engine = MagicMock()
     monkeypatch.setattr("app.main.create_database_engine", lambda _: engine)
     app = create_app(settings)
+    app.dependency_overrides[get_owner_id] = lambda: uuid4()
     session = MagicMock()
     app.dependency_overrides[get_session] = lambda: session
     with TestClient(app) as value:

@@ -19,7 +19,6 @@ URL = "postgresql+psycopg://qa:private-test-password@127.0.0.1:65432/disposable_
 
 @pytest.fixture
 def settings(monkeypatch):
-    monkeypatch.setenv("SINGLE_OWNER_ID", OWNER_ID)
     monkeypatch.setenv("DATABASE_URL", URL)
     return Settings(_env_file=None)
 
@@ -93,18 +92,17 @@ def test_configuration_rejects_missing_or_invalid_url_without_disclosure(monkeyp
 def test_environment_overrides_dotenv_without_disclosing_url(monkeypatch, tmp_path):
     dotenv = tmp_path / ".env"
     dotenv.write_text("DATABASE_URL=postgresql+psycopg://file:unused@127.0.0.1/file_db\n")
-    monkeypatch.setenv("SINGLE_OWNER_ID", OWNER_ID)
     monkeypatch.setenv("DATABASE_URL", URL)
     configured = Settings(_env_file=dotenv)
     assert configured.database_url.get_secret_value() == URL
     assert "private-test-password" not in repr(configured)
 
 
-@pytest.mark.parametrize("owner_id", [None, "not-a-uuid", "", "123"])
-def test_configuration_requires_explicit_valid_owner(monkeypatch, owner_id):
+@pytest.mark.parametrize("secret", [None, "", "short"])
+def test_configuration_requires_explicit_strong_signing_key(monkeypatch, secret):
     monkeypatch.setenv("DATABASE_URL", URL)
-    monkeypatch.delenv("SINGLE_OWNER_ID", raising=False)
-    if owner_id is not None:
-        monkeypatch.setenv("SINGLE_OWNER_ID", owner_id)
+    monkeypatch.delenv("AUTH_JWT_SECRET", raising=False)
+    if secret is not None:
+        monkeypatch.setenv("AUTH_JWT_SECRET", secret)
     with pytest.raises(ValidationError):
         Settings(_env_file=None)

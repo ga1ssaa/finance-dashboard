@@ -1,4 +1,4 @@
-"""Opt-in checks on the explicitly approved local development database.
+"""Opt-in checks on the separately approved disposable Phase 5 database.
 
 RUN_DATABASE_TESTS=1 enables these checks. All test rows remain in an outer
 transaction that is rolled back; the suite does not migrate or clear a database.
@@ -30,23 +30,8 @@ BUSINESS_TABLES = {"owners", "transactions", "subscriptions", "budget_profiles",
 
 
 @pytest.fixture(scope="module")
-def engine():
-    settings = Settings()
-    url = make_url(settings.database_url.get_secret_value())
-    if (url.drivername != "postgresql+psycopg" or url.host != "127.0.0.1"
-            or url.port != 5434 or url.database != "finance_dashboard"):
-        pytest.fail("Database tests refuse a target outside the approved local database")
-    database_engine = create_database_engine(settings)
-    try:
-        with database_engine.connect() as connection:
-            assert connection.scalar(text("SELECT current_database()")) == "finance_dashboard"
-            assert set(inspect(connection).get_table_names(schema="public")) == BUSINESS_TABLES | {"alembic_version"}
-            assert connection.execute(text("SELECT version_num FROM alembic_version")).scalars().all() == ["0002_models"]
-            for table_name in BUSINESS_TABLES:
-                assert connection.scalar(text(f'SELECT count(*) FROM "{table_name}"')) == 0, "Database tests require empty business tables"
-        yield database_engine
-    finally:
-        database_engine.dispose()
+def engine(phase5_engine):
+    yield phase5_engine
 
 
 @pytest.fixture
