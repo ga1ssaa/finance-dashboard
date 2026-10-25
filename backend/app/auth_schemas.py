@@ -19,8 +19,8 @@ def normalized_email(value: object) -> str:
 
 
 def validated_password(value: object) -> str:
-    if not isinstance(value, str) or not 15 <= len(value) <= 128:
-        raise ValueError("Password must contain 15 through 128 characters")
+    if not isinstance(value, str) or not 8 <= len(value) <= 128:
+        raise ValueError("Password must contain 8 through 128 characters")
     try:
         encoded = value.encode("utf-8")
     except UnicodeEncodeError:
@@ -35,7 +35,7 @@ class Credentials(BaseModel):
     email: Annotated[str, BeforeValidator(normalized_email), Field(max_length=254)]
     password: Annotated[SecretStr, BeforeValidator(validated_password), WithJsonSchema({
         "type": "string", "format": "password", "writeOnly": True,
-        "minLength": 15, "maxLength": 128, "description": "At most 512 UTF-8 bytes; whitespace is preserved",
+        "minLength": 8, "maxLength": 128, "description": "At most 512 UTF-8 bytes; whitespace is preserved",
     })]
 
 

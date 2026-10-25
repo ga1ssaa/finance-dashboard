@@ -220,7 +220,7 @@ and routes commit successful writes before returning. Services do not commit.
 `POST /api/v1/auth/register` and `/login` take `{email,password}` JSON and return
 `{access_token,token_type:"bearer",expires_in:300,user:{id,email}}` (201/200).
 Email is normalized by stripping outer whitespace and lowercasing ASCII. Passwords
-must contain 15–128 Unicode characters, fit 512 UTF-8 bytes, and are never trimmed
+must contain 8–128 Unicode characters, fit 512 UTF-8 bytes, and are never trimmed
 or truncated. Stored Argon2id hashes use 65536 KiB memory, time cost 3, parallelism
 1, 32-byte output and a random 16-byte salt. Unknown accounts still verify a
 dummy Argon2id hash. Wrong logins return the same generic 401; duplicate accounts

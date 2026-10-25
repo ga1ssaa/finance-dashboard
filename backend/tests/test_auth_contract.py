@@ -1,5 +1,6 @@
 """Offline auth policy and HTTP rejection checks; never opens a database."""
 from datetime import timedelta
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -46,16 +47,44 @@ def test_auth_credentials_require_json_and_sanitize_invalid_body(client, route):
         assert set(detail) <= {"loc", "msg", "type"}
 
 
-@pytest.mark.parametrize("password", ["x" * 14, "x" * 129, 123, "\ud800" * 15])
+@pytest.mark.parametrize("password", ["x" * 7, "😀" * 7, "x" * 129, "😀" * 129, 123, "\ud800" * 8])
 def test_password_policy_rejects_invalid_length_type_and_unicode(password):
     with pytest.raises(ValidationError):
         Credentials(email="valid@example.test", password=password)
 
 
-def test_password_boundaries_unicode_and_whitespace_are_preserved():
-    assert Credentials(email=" A@Example.Test ", password=" " + "x" * 14).password.get_secret_value() == " " + "x" * 14
-    assert Credentials(email="valid@example.test", password="x" * 15).email == "valid@example.test"
+@pytest.mark.parametrize("password", ["x" * 8, "пароль12", "😀" * 8, " " + "x" * 6 + " ", " " * 8])
+def test_eight_character_passwords_preserve_unicode_whitespace_and_mask_serialization(password):
+    credentials = Credentials(email=" A@Example.Test ", password=password)
+    assert credentials.email == "a@example.test"
+    assert credentials.password.get_secret_value() == password
+    assert json.loads(credentials.model_dump_json())["password"] == "**********"
+
+
+def test_password_upper_boundaries_remain_128_characters_and_512_utf8_bytes():
+    assert len(Credentials(email="valid@example.test", password="x" * 128).password.get_secret_value()) == 128
     assert len(Credentials(email="valid@example.test", password="😀" * 128).password.get_secret_value().encode()) == 512
+
+
+@pytest.mark.parametrize("route", ["register", "login"])
+@pytest.mark.parametrize("password", ["marker7", "\ud800" * 8])
+def test_invalid_boundary_and_unicode_errors_never_echo_password(client, route, password):
+    body = json.dumps({"email": "valid@example.test", "password": password}, ensure_ascii=True).encode("ascii")
+    response = client.post("/api/v1/auth/" + route, headers=CSRF | {"Content-Type": "application/json"}, content=body)
+    assert response.status_code == 422
+    assert password not in response.text
+    assert "input" not in response.text and "ctx" not in response.text
+    assert all(set(error) <= {"loc", "msg", "type"} for error in response.json()["detail"])
+
+
+def test_both_auth_routes_advertise_the_shared_eight_character_password_schema(client):
+    schema = client.get("/openapi.json").json()
+    for route in ("register", "login"):
+        body = schema["paths"]["/api/v1/auth/" + route]["post"]["requestBody"]["content"]["application/json"]["schema"]
+        assert body["$ref"] == "#/components/schemas/Credentials"
+    password = schema["components"]["schemas"]["Credentials"]["properties"]["password"]
+    assert password["minLength"] == 8 and password["maxLength"] == 128
+    assert password["writeOnly"] is True and password["format"] == "password"
 
 
 def test_argon2id_hash_is_salted_and_verifies_without_plaintext():

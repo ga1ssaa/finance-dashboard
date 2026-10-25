@@ -1,6 +1,6 @@
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useRef, useState } from 'react';
-import { ArrowRight, ChartNoAxesCombined, LockKeyhole, Mail, ShieldCheck } from 'lucide-react';
+import { ArrowRight, ChartNoAxesCombined, LockKeyhole, Mail, ShieldCheck, Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '../state/authStore';
 
 const inputClassName = 'w-full px-4 py-2.5 mt-2 rounded-xl border border-slate-200 dark:border-slate-700 dark:bg-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 text-slate-800 dark:text-white';
@@ -12,12 +12,18 @@ export default function AuthPage({ registering }: { registering: boolean }) {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmation, setConfirmation] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmation, setShowConfirmation] = useState(false);
     const [error, setError] = useState('');
     const [saving, setSaving] = useState(false);
     const pending = useRef(false);
     const submit = async (event: React.FormEvent) => {
         event.preventDefault();
         if (pending.current) return;
+        if (registering && [...password].length < 8) {
+            setError('Password must contain at least 8 characters.');
+            return;
+        }
         if (registering && password !== confirmation) {
             setError('Passwords do not match.');
             return;
@@ -89,38 +95,68 @@ export default function AuthPage({ registering }: { registering: boolean }) {
                                 />
                             </div>
                         </label>
-                        <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                            Password
-                            <input
-                                aria-label="Password"
-                                type="password"
-                                autoComplete={registering ? 'new-password' : 'current-password'}
-                                required
-                                minLength={registering ? 15 : undefined}
-                                maxLength={128}
-                                value={password}
-                                onChange={event => setPassword(event.target.value)}
-                                className={inputClassName}
-                            />
-                        </label>
-                        {registering && (
-                            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Confirm password
-                                <input
-                                    aria-label="Confirm password"
-                                    type="password"
-                                    autoComplete="new-password"
-                                    required
-                                    minLength={15}
-                                    maxLength={128}
-                                    value={confirmation}
-                                    onChange={event => setConfirmation(event.target.value)}
-                                    className={inputClassName}
-                                />
-                                <span className="block mt-2 text-xs text-slate-500">
-                                    Use 15–128 characters. Spaces in passwords are preserved.
-                                </span>
+                        <div>
+                            <label htmlFor="auth-password" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                                Password
                             </label>
+                            <div className="relative">
+                                <input
+                                    id="auth-password"
+                                    aria-label="Password"
+                                    type={showPassword ? 'text' : 'password'}
+                                    autoComplete={registering ? 'new-password' : 'current-password'}
+                                    required
+                                    minLength={registering ? 8 : undefined}
+                                    maxLength={128}
+                                    value={password}
+                                    onChange={event => setPassword(event.target.value)}
+                                    className={`${inputClassName} pr-12`}
+                                />
+                                <button
+                                    type="button"
+                                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                    aria-pressed={showPassword}
+                                    aria-controls="auth-password"
+                                    onClick={() => setShowPassword(!showPassword)}
+                                    className="absolute right-2 top-1/2 -translate-y-1/2 mt-1 p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                >
+                                    {showPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+                                </button>
+                            </div>
+                        </div>
+                        {registering && (
+                            <div>
+                                <label htmlFor="auth-confirmation" className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                                    Confirm password
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        id="auth-confirmation"
+                                        aria-label="Confirm password"
+                                        type={showConfirmation ? 'text' : 'password'}
+                                        autoComplete="new-password"
+                                        required
+                                        minLength={8}
+                                        maxLength={128}
+                                        value={confirmation}
+                                        onChange={event => setConfirmation(event.target.value)}
+                                        className={`${inputClassName} pr-12`}
+                                    />
+                                    <button
+                                        type="button"
+                                        aria-label={showConfirmation ? 'Hide password confirmation' : 'Show password confirmation'}
+                                        aria-pressed={showConfirmation}
+                                        aria-controls="auth-confirmation"
+                                        onClick={() => setShowConfirmation(!showConfirmation)}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 mt-1 p-2 rounded-lg text-slate-500 dark:text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                    >
+                                        {showConfirmation ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
+                                    </button>
+                                </div>
+                                <span className="block mt-2 text-xs text-slate-500">
+                                    Use 8–128 characters. Spaces in passwords are preserved.
+                                </span>
+                            </div>
                         )}
                         <button type="submit" disabled={saving} className="w-full flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 disabled:opacity-60">
                             {saving ? 'Please wait…' : registering ? 'Create account' : 'Sign in'}

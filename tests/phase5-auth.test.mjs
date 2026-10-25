@@ -131,3 +131,158 @@ test('failed server logout keeps local data cleared and blocks account switching
   await auth.logout();
   assert.equal(auth.getAuthSnapshot().status, 'anonymous');
 }));
+
+/** Executes AuthPage render/handlers; does not emulate native browser validation. */
+async function authPage(registering) {
+  const slots = [];
+  let cursor = 0;
+  const calls = [];
+  const key = `__authPageHarness${moduleId++}`;
+  const hooks = {
+    useState: initial => {
+      const index = cursor++;
+      if (!(index in slots)) slots[index] = initial;
+      return [slots[index], next => { slots[index] = typeof next === 'function' ? next(slots[index]) : next; }];
+    },
+    useRef: initial => {
+      const index = cursor++;
+      if (!(index in slots)) slots[index] = { current: initial };
+      return slots[index];
+    },
+    useAuth: () => ({ error: '', register: async (...args) => { calls.push({ method: 'register', args }); }, login: async (...args) => { calls.push({ method: 'login', args }); } }),
+    useNavigate: () => () => {},
+    useLocation: () => ({ state: null }),
+    __jsx: (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity).filter(child => child !== false && child != null) }),
+  };
+  globalThis[key] = hooks;
+  try {
+    let source = await readFile(new URL('../src/pages/AuthPage.tsx', import.meta.url), 'utf8');
+    const icons = source.match(/import \{([^}]+)\} from 'lucide-react';/)[1].split(',').map(name => name.trim());
+    source = source.replace(/^import .*$/gm, '');
+    source = `const {useState,useRef,useAuth,useNavigate,useLocation,__jsx}=globalThis.${key};\n${icons.map(name => `const ${name}=${JSON.stringify(name)};`).join('\n')}\n${source}`;
+    const code = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React, jsxFactory: '__jsx' } }).outputText;
+    const { default: Page } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
+    const render = () => { cursor = 0; return Page({ registering }); };
+    const nodes = () => {
+      const result = [];
+      function visit(node, parent) {
+        if (!node || typeof node !== 'object') return;
+        const record = { ...node, parent };
+        result.push(record);
+        node.children.forEach(child => visit(child, record));
+      }
+      visit(render(), null);
+      return result;
+    };
+    const find = (type, predicate = () => true) => {
+      const found = nodes().filter(node => node.type === type && predicate(node.props));
+      assert.equal(found.length, 1, `Expected one ${type} matching requested props`);
+      return found[0];
+    };
+    return {
+      calls, nodes, find,
+      input: label => find('input', props => props['aria-label'] === label),
+      button: name => find('button', props => props['aria-label'] === name),
+      change: (label, value) => find('input', props => props['aria-label'] === label).props.onChange({ target: { value } }),
+      submit: () => find('form').props.onSubmit({ preventDefault() {} }),
+    };
+  } finally { delete globalThis[key]; }
+}
+
+test('login password starts hidden, toggles reversibly and preserves typed values without submitting', async () => {
+  const page = await authPage(false);
+  page.change('Password', 'synthetic-value');
+  assert.equal(page.input('Password').props.type, 'password');
+  assert.equal(page.nodes().filter(node => node.type === 'input' && node.props['aria-label'] === 'Confirm password').length, 0);
+  assert.equal(page.button('Show password').props['aria-pressed'], false);
+  page.button('Show password').props.onClick();
+  assert.equal(page.input('Password').props.type, 'text');
+  assert.equal(page.input('Password').props.value, 'synthetic-value');
+  assert.equal(page.button('Hide password').props['aria-pressed'], true);
+  page.button('Hide password').props.onClick();
+  assert.equal(page.input('Password').props.type, 'password');
+  assert.equal(page.input('Password').props.value, 'synthetic-value');
+  assert.equal(page.calls.length, 0);
+});
+
+test('registration password and confirmation visibility are independent and accessible', async () => {
+  const page = await authPage(true);
+  page.change('Password', 'synthetic-password');
+  page.change('Confirm password', 'independent-confirmation');
+  for (const [label, button] of [['Password', 'Show password'], ['Confirm password', 'Show password confirmation']]) {
+    const input = page.input(label), control = page.button(button);
+    assert.equal(input.props.type, 'password');
+    assert.equal(control.props.type, 'button');
+    assert.equal(control.props['aria-controls'], input.props.id);
+    assert.equal(control.props['aria-pressed'], false);
+    assert.ok(page.nodes().some(node => node.type === 'label' && node.props.htmlFor === input.props.id));
+    let parent = control.parent;
+    while (parent) {
+      assert.notEqual(parent.type, 'label', 'Visibility button must not be nested inside an input label');
+      parent = parent.parent;
+    }
+    assert.ok(control.children.some(icon => [true, 'true'].includes(icon.props?.['aria-hidden'])));
+  }
+  page.button('Show password').props.onClick();
+  assert.equal(page.input('Password').props.type, 'text');
+  assert.equal(page.input('Confirm password').props.type, 'password');
+  page.button('Show password confirmation').props.onClick();
+  page.button('Hide password').props.onClick();
+  assert.equal(page.input('Password').props.type, 'password');
+  assert.equal(page.input('Confirm password').props.type, 'text');
+  assert.equal(page.input('Password').props.value, 'synthetic-password');
+  assert.equal(page.input('Confirm password').props.value, 'independent-confirmation');
+  assert.equal(page.calls.length, 0);
+});
+
+test('registration declares native eight-character boundary and submits matching eight-character password unchanged', async () => {
+  const page = await authPage(true);
+  for (const label of ['Password', 'Confirm password']) {
+    const input = page.input(label).props;
+    assert.equal(input.minLength, 8);
+    assert.equal(input.maxLength, 128);
+    assert.equal(input.required, true);
+    assert.equal(input.autoComplete, 'new-password');
+    // Native constraint validation uses these props; it is not executed in this source harness.
+    assert.ok('1234567'.length < input.minLength && '12345678'.length >= input.minLength);
+  }
+  page.change('Email address', ' synthetic@example.test ');
+  page.change('Password', ' eight!!');
+  page.change('Confirm password', ' eight!!');
+  await page.submit();
+  assert.deepEqual(page.calls, [{ method: 'register', args: ['synthetic@example.test', ' eight!!'] }]);
+  assert.equal(page.input('Password').props.value, '');
+  assert.equal(page.input('Confirm password').props.value, '');
+  const login = await authPage(false);
+  assert.equal(login.input('Password').props.minLength, undefined);
+  assert.equal(login.input('Password').props.autoComplete, 'current-password');
+});
+
+test('mismatched registration confirmation never reaches auth and retains entered values', async () => {
+  const page = await authPage(true);
+  page.change('Password', '12345678');
+  page.change('Confirm password', '87654321');
+  await page.submit();
+  assert.equal(page.calls.length, 0);
+  assert.equal(page.input('Password').props.value, '12345678');
+  assert.equal(page.input('Confirm password').props.value, '87654321');
+  const alert = page.nodes().find(node => node.props.role === 'alert');
+  assert.ok(alert.children.includes('Passwords do not match.'));
+});
+
+for (const [name, short, valid] of [['ASCII', '1234567', '12345678'], ['Unicode code points', '😀'.repeat(7), '😀'.repeat(8)]]) {
+  test(`registration rejects seven and accepts eight ${name} before transport`, async () => {
+    const page = await authPage(true);
+    page.change('Email address', 'synthetic@example.test');
+    page.change('Password', short);
+    page.change('Confirm password', short);
+    await page.submit();
+    assert.equal(page.calls.length, 0);
+    assert.ok(page.nodes().find(node => node.props.role === 'alert').children.includes('Password must contain at least 8 characters.'));
+    assert.equal(page.input('Password').props.value, short);
+    page.change('Password', valid);
+    page.change('Confirm password', valid);
+    await page.submit();
+    assert.deepEqual(page.calls, [{ method: 'register', args: ['synthetic@example.test', valid] }]);
+  });
+}
