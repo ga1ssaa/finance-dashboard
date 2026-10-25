@@ -247,14 +247,16 @@ All persisted monetary values are canonical USD decimal strings with up to eight
 
 Settings → Export Backup downloads the authenticated account's complete financial snapshot from `GET /api/v1/data/export`. The versioned JSON contains canonical USD decimal strings, calendar dates, nullable budget/preferences, and no internal IDs or authentication data. Export uses a consistent read-only snapshot, independent of the current list page. Limits are 10,000 transactions, 1,000 subscriptions and 5 MiB of JSON; oversized exports fail explicitly rather than truncating data. Downloaded files contain unencrypted financial data and should be stored privately.
 
-Existing financial localStorage data is neither imported nor changed. Import, reset and legacy migration remain disabled. No automatic migration from browser storage is performed. This user JSON download is separate from the private administrative PostgreSQL backup/restore tools.
+Settings → Import Backup selects a local JSON file for a read-only preview through `POST /api/v1/data/import/preview`. Version 1 USD files are validated before current account counts are read; the preview shows file counts, current counts, hypothetical replacement impact and warnings. Files are limited to 5 MiB and encoded requests to 10 MiB. No records are imported, staged or replaced. The displayed SHA-256 identifies the document only and is not permission to perform a write; current counts may change after the preview.
+
+Existing financial localStorage data is neither imported nor changed. Final import confirmation, reset and legacy migration remain disabled. No automatic migration from browser storage is performed. User JSON export and preview are separate from the private administrative PostgreSQL backup/restore tools.
 
 Validation (Node.js 24 for the built-in TypeScript test loader):
 
 ```bash
 npm run lint
 npm run build
-node --test tests/phase4.test.mjs tests/phase5-auth.test.mjs tests/phase6-export.test.mjs
+node --test tests/phase4.test.mjs tests/phase5-auth.test.mjs tests/phase6-export.test.mjs tests/phase6-preview.test.mjs
 ```
 
 `tests/phase4-api.test.mjs` and its fixture describe the earlier unauthenticated integration phase; they are historical and are superseded by the authenticated Phase 5 checks. Do not point a historical fixture at normal development data.

@@ -296,7 +296,9 @@ def test_openapi_export_exposes_only_business_contract_and_no_write_routes(api):
         definition=schema["components"]["schemas"][name]
         assert definition["additionalProperties"] is False
         assert not {"id","owner_id","user_id","created_at","updated_at","password_hash","access_token"} & definition["properties"].keys()
-    assert not any(path.startswith("/api/v1/data/") and path!="/api/v1/data/export" for path in schema["paths"])
+    data_paths={key:value for key,value in schema["paths"].items() if key.startswith("/api/v1/data/")}
+    assert set(data_paths)=={"/api/v1/data/export","/api/v1/data/import/preview"}
+    assert set(data_paths["/api/v1/data/import/preview"])=={"post"}
 
 
 @pytest.mark.parametrize("value",[Decimal("NaN"),Decimal("Infinity"),Decimal("-1"),Decimal("1.000000001"),Decimal("1000000000000"),1.5,True])

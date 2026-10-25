@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { downloadAccountExport } from "../api/dataExport";
+import { previewImportFile } from "../api/importPreview";
+import type { ImportPreview, ResourceCounts } from "../api/importPreview";
+import { getSessionEpoch } from "../api/authSession";
 import ResourceStatus from "../components/ResourceStatus";
 import DangerZone from "../features/settings/DangerZone";
 import { Moon, Sun, Download, Upload, DollarSign } from "lucide-react";
 import { useSettings, CURRENCY_SYMBOLS, type Currency } from "../hooks/useSettings";
+
+const previewResources: { key: keyof ResourceCounts; label: string }[] = [
+    { key: 'transactions', label: 'Transactions' },
+    { key: 'subscriptions', label: 'Subscriptions' },
+    { key: 'budget_profiles', label: 'Budget profile' },
+    { key: 'preferences', label: 'Currency preference' },
+];
 
 interface SettingsPageProps {
     isDarkMode?: boolean;
@@ -16,9 +26,18 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
     const [exportError, setExportError] = useState('');
     const [exportMessage, setExportMessage] = useState('');
     const pendingExport = useRef<AbortController | null>(null);
+    const [previewing, setPreviewing] = useState(false);
+    const [previewError, setPreviewError] = useState('');
+    const [preview, setPreview] = useState<ImportPreview | null>(null);
+    const fileInput = useRef<HTMLInputElement | null>(null);
+    const previewGeneration = useRef(0);
+    const pendingPreview = useRef<{ controller: AbortController; file: File; generation: number; epoch: number } | null>(null);
     useEffect(() => () => {
         pendingExport.current?.abort();
         pendingExport.current = null;
+        previewGeneration.current += 1;
+        pendingPreview.current?.controller.abort();
+        pendingPreview.current = null;
     }, []);
     const handleExport = async () => {
         if (pendingExport.current) return;
@@ -49,6 +68,41 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
         setExporting(false);
         setExportError('');
         setExportMessage('Export canceled.');
+    };
+    const handlePreviewFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.currentTarget.files?.[0];
+        event.currentTarget.value = '';
+        if (!file || pendingPreview.current?.file === file) return;
+        const generation = ++previewGeneration.current;
+        const epoch = getSessionEpoch();
+        pendingPreview.current?.controller.abort();
+        const controller = new AbortController();
+        const operation = { controller, file, generation, epoch };
+        pendingPreview.current = operation;
+        setPreview(null);
+        setPreviewError('');
+        setPreviewing(true);
+        const isCurrent = () => pendingPreview.current === operation
+            && generation === previewGeneration.current && epoch === getSessionEpoch() && !controller.signal.aborted;
+        try {
+            const result = await previewImportFile(file, controller.signal);
+            if (isCurrent()) setPreview(result);
+        } catch (error) {
+            if (isCurrent()) setPreviewError(error instanceof Error ? error.message : 'Unable to preview this backup.');
+        } finally {
+            if (isCurrent()) {
+                pendingPreview.current = null;
+                setPreviewing(false);
+            }
+        }
+    };
+    const cancelPreview = () => {
+        previewGeneration.current += 1;
+        pendingPreview.current?.controller.abort();
+        pendingPreview.current = null;
+        setPreviewing(false);
+        setPreview(null);
+        setPreviewError('');
     };
     return (
         <div className="space-y-6">
@@ -111,7 +165,7 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
                 Data Backup & Restore
                 </h3>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Download all account transactions, subscriptions, budget inputs and currency preference as JSON. Amounts are exported in USD. Downloaded files contain unencrypted financial data; store them privately. Import and reset remain unavailable; existing browser data is left untouched.
+                Download all account transactions, subscriptions, budget inputs and currency preference as JSON. Amounts are exported in USD. Downloaded files contain unencrypted financial data; store them privately. Import preview checks a version 1 USD backup without changing your account. Applying an import, reset and legacy migration remain unavailable; existing browser data is left untouched.
                 </p>
             </div>
 
@@ -137,18 +191,92 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
                             </button>
                         )}
                         <button
-                            disabled title="Unavailable for API-managed data"
+                            type="button"
+                            onClick={() => fileInput.current?.click()}
                             className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-xl transition-colors cursor-pointer"
-                            >
-                            <Upload size={18} />
+                        >
+                            <Upload size={18} aria-hidden="true" />
                             Import Backup
                         </button>
+                        <input
+                            ref={fileInput}
+                            type="file"
+                            accept=".json,application/json"
+                            aria-label="Select JSON backup for preview"
+                            onChange={handlePreviewFile}
+                            hidden
+                        />
+                        {previewing && (
+                            <button type="button" onClick={cancelPreview} className="px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300">
+                                Cancel preview
+                            </button>
+                        )}
 
                     </div>
                     {exporting && <p role="status" className="text-sm text-slate-500 dark:text-slate-400">Preparing your account export…</p>}
                     {exportError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{exportError}</p>}
                     {exportMessage && <p role="status" className="text-sm text-slate-600 dark:text-slate-300">{exportMessage}</p>}
                 </div>
+
+                <section aria-label="Import preview" className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 space-y-4">
+                    <h3 className="font-semibold text-lg text-slate-800 dark:text-white">Import preview</h3>
+                    <p className="text-sm text-slate-600 dark:text-slate-300">Preview only — no account data is written. Select a JSON backup up to 5 MiB using Import Backup.</p>
+                    <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">REPLACE would remove your existing account data and create the file’s data. Final import is disabled.</p>
+                    {previewing && <p role="status" className="text-sm text-slate-500 dark:text-slate-400">Validating backup and calculating replacement impact…</p>}
+                    {previewError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{previewError}</p>}
+                    {preview && (
+                        <div className="space-y-4 text-sm text-slate-700 dark:text-slate-300">
+                            <p role="status">Valid version {preview.source.schema_version} {preview.source.base_currency} backup. No account data was changed.</p>
+                            <p>Backup exported at: {preview.source.exported_at}</p>
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-left">
+                                    <caption className="text-left font-semibold mb-2">Replacement impact if import were enabled</caption>
+                                    <thead>
+                                        <tr>
+                                            <th scope="col" className="py-2">Data</th>
+                                            <th scope="col">In file</th>
+                                            <th scope="col">Current account</th>
+                                            <th scope="col">Would remove</th>
+                                            <th scope="col">Would create</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {previewResources.map(({ key, label }) => (
+                                            <tr key={key} className="border-t border-slate-100 dark:border-slate-700">
+                                                <th scope="row" className="py-2 font-medium">{label}</th>
+                                                <td>{preview.source.counts[key]}</td>
+                                                <td>{preview.current.counts[key]}</td>
+                                                <td>{preview.replacement_impact.would_remove[key]}</td>
+                                                <td>{preview.replacement_impact.would_create[key]}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                            <p>
+                                Budget in file: {preview.source.counts.budget_profiles ? 'Present' : 'Absent'};
+                                current account: {preview.current.counts.budget_profiles ? 'Present' : 'Absent'}.
+                                Currency preference in file: {preview.source.counts.preferences ? 'Present' : 'Absent'};
+                                current account: {preview.current.counts.preferences ? 'Present' : 'Absent'}.
+                            </p>
+                            <ul className="list-disc pl-5 space-y-1">
+                                {preview.warnings.map((warning, index) => (
+                                    <li key={`${warning.code}-${index}`}>{warning.message}</li>
+                                ))}
+                            </ul>
+                            <p className="break-all">File SHA-256 digest: <code>{preview.document_sha256}</code></p>
+                            <p className="text-xs text-slate-500">This digest identifies the file only. It does not authorize an import.</p>
+                        </div>
+                    )}
+                    <button
+                        type="button"
+                        disabled
+                        title="Preview only; importing account data is unavailable"
+                        className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-400 cursor-not-allowed"
+                    >
+                        Confirm Import (unavailable)
+                    </button>
+                </section>
 
                 {/* Danger Zone */}
                 <DangerZone />

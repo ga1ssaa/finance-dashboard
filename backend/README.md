@@ -460,3 +460,35 @@ Database and stored-data failures return generic errors without row values.
 
 This endpoint does not run PostgreSQL archive utilities or modify the database.
 Product import, reset and merge operations are not implemented in this phase.
+
+## Financial JSON import preview
+
+`POST /api/v1/data/import/preview` accepts Bearer-authenticated JSON with exactly
+`mode: "replace"`, `source_format: "v1"`, and `document`, the original JSON file
+as a string. No query parameters or owner selector are accepted. Authentication
+precedes body processing; the HTTP body is bounded to 10 MiB before JSON parsing,
+and the document itself is bounded to 5 MiB of strict UTF-8.
+
+Only the required version-one export envelope and business fields are accepted.
+Before recursive JSON decoding, both layers enforce a maximum depth of eight
+containers and a budget of 150000 tokens (container starts, strings and primitive
+atoms). During decoding, duplicate keys and nonfinite/float numbers are rejected;
+integer lexemes are limited to 32 characters before conversion. Unknown fields, missing metadata,
+IDs, audit fields, invalid Unicode, numeric money, non-USD base currency and legacy
+formats are rejected. The version must be the integer `1`; money must be unsigned
+strings with exactly eight decimal places, with a positive transaction amount.
+Dates require `YYYY-MM-DD`; the export timestamp requires UTC `Z` or `+00:00`,
+with at most six fractional-second digits. Limits remain 10000 transactions and
+1000 subscriptions. Validation errors do not echo document contents or key names.
+
+Complete document validation happens before a financial connection is acquired.
+Current account counts use one dedicated repeatable-read, read-only transaction,
+direct owner-scoped counts, rollback and connection cleanup. Preview never creates
+missing defaults, imports rows, stages a document or receipt, or issues a token.
+The response contains only source metadata, SHA-256 of the exact document UTF-8
+bytes, source/current counts, hypothetical replacement counts and fixed warnings.
+The digest is informational and authorizes no later action. Current counts may
+change immediately after the snapshot. Responses and errors are not cached.
+
+Preview is available for review only. Apply, reset and legacy migration remain
+unimplemented, and private PostgreSQL archive utilities are never invoked.
