@@ -128,7 +128,7 @@ class ReplacementImpact(PreviewModel):
 
 
 class PreviewWarning(PreviewModel):
-    code: Literal["PREVIEW_ONLY", "REPLACE_ALL_DATA", "EMPTY_SOURCE", "BUDGET_ABSENT", "PREFERENCES_ABSENT"]
+    code: Literal["PREVIEW_ONLY", "REPLACE_ALL_DATA", "RESET_ALL_DATA", "EMPTY_SOURCE", "BUDGET_ABSENT", "PREFERENCES_ABSENT"]
     message: str
 
 

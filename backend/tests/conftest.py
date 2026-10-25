@@ -50,13 +50,13 @@ def phase5_engine(phase5_source, phase5_state):
     from sqlalchemy import inspect, text
     from verification.db_safety import SafetyError, guarded_engine, verify_database
     engine = guarded_engine(phase5_source, phase5_state["database"], mode="target_write")
-    tables = {"owners", "transactions", "subscriptions", "budget_profiles", "preferences", "users", "auth_sessions", "auth_refresh_tokens", "alembic_version"}
+    tables = {"owners", "transactions", "subscriptions", "budget_profiles", "preferences", "users", "auth_sessions", "auth_refresh_tokens", "data_operation_receipts", "alembic_version"}
     try:
         with engine.connect() as connection:
             verify_database(connection, phase5_state["database"])
             if set(inspect(connection).get_table_names(schema="public")) != tables:
                 raise SafetyError("Unexpected disposable schema")
-            if connection.execute(text("SELECT version_num FROM alembic_version")).scalars().all() != ["0003_auth"]:
+            if connection.execute(text("SELECT version_num FROM alembic_version")).scalars().all() != ["0004_data_operations"]:
                 raise SafetyError("Unexpected disposable revision")
         yield engine
     finally:

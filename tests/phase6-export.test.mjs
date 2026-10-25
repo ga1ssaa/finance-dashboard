@@ -140,7 +140,7 @@ async function settingsHarness() {
     downloadAccountExport: signal => { calls.push(signal); return pending.promise; },
     previewImportFile: async () => { throw new Error('Preview is outside this export test'); }, getSessionEpoch: () => 1,
     useSettings: () => ({ currency: 'EUR', setCurrency: () => {}, preferenceError: '', preferenceLoading: false, refresh: () => {} }),
-    CURRENCY_SYMBOLS: { USD: '$', EUR: '€' }, ResourceStatus: () => null,
+    CURRENCY_SYMBOLS: { USD: '$', EUR: '€' }, ResourceStatus: () => null, DataConfirmationDialog: () => null,
     __jsx: (type, props, ...children) => typeof type === 'function' ? type(props || {}) : { type, props: props || {}, children: children.flat(Infinity).filter(child => child !== false && child != null) },
   };
   globalThis[key] = dependencies;
@@ -148,9 +148,9 @@ async function settingsHarness() {
     let source = await readFile(new URL(path, import.meta.url), 'utf8');
     const icons = source.match(/import \{([^}]+)\} from ["']lucide-react["'];?/)[1].split(',').map(name => name.trim());
     source = source.replace(/^import .*$/gm, '');
-    source = `const {useState,useRef,useEffect,downloadAccountExport,previewImportFile,getSessionEpoch,useSettings,CURRENCY_SYMBOLS,ResourceStatus,DangerZone,__jsx}=globalThis.${key};\n${icons.map(name => `const ${name}=${JSON.stringify(name)};`).join('\n')}\n${source}`;
+    source = `const {useState,useRef,useEffect,downloadAccountExport,previewImportFile,getSessionEpoch,useSettings,CURRENCY_SYMBOLS,ResourceStatus,DataConfirmationDialog,DangerZone,__jsx}=globalThis.${key};\n${icons.map(name => `const ${name}=${JSON.stringify(name)};`).join('\n')}\n${source}`;
     // DangerZone defines its own name, so remove the unused binding from its wrapper.
-    if (path.includes('DangerZone')) source = source.replace('ResourceStatus,DangerZone,__jsx', 'ResourceStatus,__jsx');
+    if (path.includes('DangerZone')) source = source.replace('ResourceStatus,DataConfirmationDialog,DangerZone,__jsx', 'ResourceStatus,__jsx');
     const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React, jsxFactory: '__jsx' } }).outputText;
     return (await import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`)).default;
   };
@@ -168,12 +168,12 @@ async function settingsHarness() {
   } finally { delete globalThis[key]; }
 }
 
-test('Settings starts one export, exposes success and leaves final import/reset disabled', async () => {
+test('Settings starts one export, exposes success and keeps destructive actions behind separate review', async () => {
   const view = await settingsHarness();
   assert.notEqual(view.button('Import Backup').props.disabled, true);
-  assert.equal(view.button('Confirm Import (unavailable)').props.disabled, true);
+  assert.equal(view.button('Review import confirmation').props.disabled, true);
   assert.ok(view.nodes().some(node => node.type === 'input' && node.props.type === 'file'));
-  assert.equal(view.button('Reset All Data').props.disabled, true);
+  assert.equal(view.button('Review account reset').props.type, 'button');
   const start = view.button('Export Backup');
   assert.equal(start.props.type, 'button');
   const pending = start.props.onClick();

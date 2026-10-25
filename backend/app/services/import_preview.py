@@ -5,13 +5,13 @@ import hashlib
 import json
 
 from pydantic import ValidationError
-from sqlalchemy import func, select, text
-
+from app.data_authorization import issue_preview_token, require_session_identity
+from app.data_operation_schemas import AuthorizedImportPreview
 from app.import_preview_schemas import (
     MAX_SUBSCRIPTIONS, MAX_TRANSACTIONS, ImportDocument, ImportPreviewRequest,
     ImportPreviewResponse, PreviewCounts,
 )
-from app.models import BudgetProfile, Preferences, Subscription, Transaction
+from app.services.data_state import read_preview_state
 
 
 MAX_REQUEST_BYTES = 10 * 1024 * 1024
@@ -109,7 +109,14 @@ def parse_preview_request(raw_body: bytes) -> ParsedPreviewRequest:
         raise PreviewTooLarge("Preview exceeds supported limits")
     try:
         request = ImportPreviewRequest.model_validate(_load_json(raw_body))
-        document_bytes = request.document.encode("utf-8", errors="strict")
+        return parse_document(request.document)
+    except (ValidationError, ValueError, TypeError, UnicodeError, RecursionError):
+        raise PreviewInvalid("Invalid preview document") from None
+
+
+def parse_document(document_text: str) -> ParsedPreviewRequest:
+    try:
+        document_bytes = document_text.encode("utf-8", errors="strict")
         if len(document_bytes) > MAX_DOCUMENT_BYTES:
             raise PreviewTooLarge("Preview exceeds supported limits")
         value = _load_json(document_bytes)
@@ -126,25 +133,14 @@ def parse_preview_request(raw_body: bytes) -> ParsedPreviewRequest:
         raise PreviewInvalid("Invalid preview document") from None
 
 
-def preview_owner_import(engine, owner_id, raw_body: bytes) -> ImportPreviewResponse:
+def preview_owner_import(engine, user, raw_body: bytes, *, settings) -> AuthorizedImportPreview:
+    require_session_identity(user)
     parsed = parse_preview_request(raw_body)  # Entire validation before connect.
     source_data = parsed.document.data
     source = PreviewCounts(transactions=len(source_data.transactions), subscriptions=len(source_data.subscriptions),
                            budget_profiles=int(source_data.budget is not None), preferences=int(source_data.preferences is not None))
-    with engine.connect() as connection:
-        transaction = connection.begin()
-        try:
-            connection.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"))
-            counts = {}
-            for name, model in (("transactions", Transaction), ("subscriptions", Subscription),
-                                ("budget_profiles", BudgetProfile), ("preferences", Preferences)):
-                count = connection.scalar(select(func.count()).select_from(model).where(model.owner_id == owner_id))
-                if type(count) is not int or count < 0 or name in {"budget_profiles", "preferences"} and count > 1:
-                    raise RuntimeError("Current financial counts are unavailable")
-                counts[name] = count
-            current = PreviewCounts(**counts)
-        finally:
-            transaction.rollback()
+    state = read_preview_state(engine, user.owner_id)
+    current = state.counts
     warnings = [
         {"code": "PREVIEW_ONLY", "message": "This is a validation preview; no financial data has been changed."},
         {"code": "REPLACE_ALL_DATA", "message": "A future replacement would replace all financial data in the signed-in account."},
@@ -155,9 +151,11 @@ def preview_owner_import(engine, owner_id, raw_body: bytes) -> ImportPreviewResp
         warnings.append({"code": "BUDGET_ABSENT", "message": "The document has no budget; replacement would remove the current budget."})
     if source.preferences == 0 and current.preferences == 1:
         warnings.append({"code": "PREFERENCES_ABSENT", "message": "The document has no preferences; replacement would remove the current preferences."})
-    return ImportPreviewResponse(
+    summary = ImportPreviewResponse(
         validation_status="valid", document_sha256=parsed.document_sha256,
         source={"format": parsed.document.format, "schema_version": parsed.document.schema_version,
                 "exported_at": parsed.document.exported_at, "base_currency": parsed.document.base_currency, "counts": source},
         current={"counts": current}, replacement_impact={"would_remove": current, "would_create": source}, warnings=warnings,
     )
+    token, expires = issue_preview_token(settings, user, "import_replace", parsed.document_sha256, state.sha256)
+    return AuthorizedImportPreview(**summary.model_dump(), preview_token=token, expires_at=expires)

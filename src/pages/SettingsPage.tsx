@@ -4,7 +4,7 @@ import { previewImportFile } from "../api/importPreview";
 import type { ImportPreview, ResourceCounts } from "../api/importPreview";
 import { getSessionEpoch } from "../api/authSession";
 import ResourceStatus from "../components/ResourceStatus";
-import DangerZone from "../features/settings/DangerZone";
+import { DataConfirmationDialog } from "../components/DataConfirmationDialog";
 import { Moon, Sun, Download, Upload, DollarSign } from "lucide-react";
 import { useSettings, CURRENCY_SYMBOLS, type Currency } from "../hooks/useSettings";
 
@@ -29,6 +29,8 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
     const [previewing, setPreviewing] = useState(false);
     const [previewError, setPreviewError] = useState('');
     const [preview, setPreview] = useState<ImportPreview | null>(null);
+    const [confirmationKind, setConfirmationKind] = useState<'import_replace' | 'reset' | null>(null);
+    const [selectedPreviewFile, setSelectedPreviewFile] = useState<File | null>(null);
     const fileInput = useRef<HTMLInputElement | null>(null);
     const previewGeneration = useRef(0);
     const pendingPreview = useRef<{ controller: AbortController; file: File; generation: number; epoch: number } | null>(null);
@@ -39,6 +41,16 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
         pendingPreview.current?.controller.abort();
         pendingPreview.current = null;
     }, []);
+    useEffect(() => {
+        if (!preview) return;
+        const timer = setTimeout(() => {
+            setSelectedPreviewFile(null);
+            setPreview(null);
+            setConfirmationKind(null);
+            setPreviewError('The preview expired. Select the backup again for a fresh preview.');
+        }, Math.max(0, Date.parse(preview.expires_at) - Date.now()));
+        return () => clearTimeout(timer);
+    }, [preview]);
     const handleExport = async () => {
         if (pendingExport.current) return;
         const controller = new AbortController();
@@ -73,6 +85,8 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
         const file = event.currentTarget.files?.[0];
         event.currentTarget.value = '';
         if (!file || pendingPreview.current?.file === file) return;
+        setConfirmationKind(null);
+        setSelectedPreviewFile(null);
         const generation = ++previewGeneration.current;
         const epoch = getSessionEpoch();
         pendingPreview.current?.controller.abort();
@@ -86,7 +100,10 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
             && generation === previewGeneration.current && epoch === getSessionEpoch() && !controller.signal.aborted;
         try {
             const result = await previewImportFile(file, controller.signal);
-            if (isCurrent()) setPreview(result);
+            if (isCurrent()) {
+                setSelectedPreviewFile(file);
+                setPreview(result);
+            }
         } catch (error) {
             if (isCurrent()) setPreviewError(error instanceof Error ? error.message : 'Unable to preview this backup.');
         } finally {
@@ -102,6 +119,8 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
         pendingPreview.current = null;
         setPreviewing(false);
         setPreview(null);
+        setSelectedPreviewFile(null);
+        setConfirmationKind(null);
         setPreviewError('');
     };
     return (
@@ -165,7 +184,7 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
                 Data Backup & Restore
                 </h3>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Download all account transactions, subscriptions, budget inputs and currency preference as JSON. Amounts are exported in USD. Downloaded files contain unencrypted financial data; store them privately. Import preview checks a version 1 USD backup without changing your account. Applying an import, reset and legacy migration remain unavailable; existing browser data is left untouched.
+                Download all account transactions, subscriptions, budget inputs and currency preference as JSON. Amounts are exported in USD. Downloaded files contain unencrypted financial data; store them privately. Import preview checks a version 1 USD backup without changing your account. Replacing or resetting account data requires a fresh preview, password and explicit confirmation. Legacy migration remains unavailable; existing browser data is left untouched.
                 </p>
             </div>
 
@@ -220,8 +239,8 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
 
                 <section aria-label="Import preview" className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 space-y-4">
                     <h3 className="font-semibold text-lg text-slate-800 dark:text-white">Import preview</h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-300">Preview only — no account data is written. Select a JSON backup up to 5 MiB using Import Backup.</p>
-                    <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">REPLACE would remove your existing account data and create the file’s data. Final import is disabled.</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-300">Previewing writes no account data. Select a JSON backup up to 5 MiB using Import Backup. Importing requires a separate confirmation.</p>
+                    <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">REPLACE removes your existing account data and creates the file’s data. Review the impact before opening the separate confirmation dialog.</p>
                     {previewing && <p role="status" className="text-sm text-slate-500 dark:text-slate-400">Validating backup and calculating replacement impact…</p>}
                     {previewError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{previewError}</p>}
                     {preview && (
@@ -230,7 +249,7 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
                             <p>Backup exported at: {preview.source.exported_at}</p>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left">
-                                    <caption className="text-left font-semibold mb-2">Replacement impact if import were enabled</caption>
+                                    <caption className="text-left font-semibold mb-2">Replacement impact if confirmed</caption>
                                     <thead>
                                         <tr>
                                             <th scope="col" className="py-2">Data</th>
@@ -270,16 +289,34 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
                     )}
                     <button
                         type="button"
-                        disabled
-                        title="Preview only; importing account data is unavailable"
-                        className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-400 cursor-not-allowed"
+                        disabled={!preview || previewing}
+                        onClick={() => {
+                            if (preview && Date.parse(preview.expires_at) > Date.now() && selectedPreviewFile) setConfirmationKind('import_replace');
+                        }}
+                        className="px-4 py-2 rounded-xl bg-red-600 text-white disabled:opacity-50"
                     >
-                        Confirm Import (unavailable)
+                        Review import confirmation
                     </button>
                 </section>
 
-                {/* Danger Zone */}
-                <DangerZone />
+                <section className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-red-200 dark:border-red-900/30 space-y-3">
+                    <h3 className="font-semibold text-lg text-slate-800 dark:text-white">Reset financial data</h3>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">Reset deletes transactions, subscriptions, budget inputs and the currency preference. Your login account is kept. Review a fresh preview before confirming.</p>
+                    <button type="button" onClick={() => setConfirmationKind('reset')} className="px-4 py-2.5 rounded-xl bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 font-bold">Review account reset</button>
+                </section>
+                {confirmationKind && (
+                    <DataConfirmationDialog
+                        key={confirmationKind}
+                        kind={confirmationKind}
+                        initialPreview={confirmationKind === 'import_replace' ? preview || undefined : undefined}
+                        initialFile={confirmationKind === 'import_replace' ? selectedPreviewFile || undefined : undefined}
+                        onClose={() => {
+                            setConfirmationKind(null);
+                            setPreview(null);
+                            setSelectedPreviewFile(null);
+                        }}
+                    />
+                )}
             </div>
         </div>
     );

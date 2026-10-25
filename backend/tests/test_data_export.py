@@ -297,7 +297,7 @@ def test_openapi_export_exposes_only_business_contract_and_no_write_routes(api):
         assert definition["additionalProperties"] is False
         assert not {"id","owner_id","user_id","created_at","updated_at","password_hash","access_token"} & definition["properties"].keys()
     data_paths={key:value for key,value in schema["paths"].items() if key.startswith("/api/v1/data/")}
-    assert set(data_paths)=={"/api/v1/data/export","/api/v1/data/import/preview"}
+    assert set(data_paths)=={"/api/v1/data/export","/api/v1/data/import/preview","/api/v1/data/reset/preview","/api/v1/data/import","/api/v1/data/reset","/api/v1/data/operations/{key}"}
     assert set(data_paths["/api/v1/data/import/preview"])=={"post"}
 
 

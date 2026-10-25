@@ -52,6 +52,7 @@ def get_transaction(record_id: UUID, session: SessionDependency, owner_id: Owner
 @router.patch("/transactions/{record_id}", response_model=TransactionResponse, tags=["transactions"])
 def patch_transaction(record_id: UUID, body: TransactionPatch, session: SessionDependency, owner_id: OwnerDependency):
     with session.begin():
+        finance.lock_owner(session, owner_id)
         record = finance.get_record(session, Transaction, owner_id, record_id)
         finance.update_record(session, record, body.model_dump(exclude_unset=True))
         result = TransactionResponse.model_validate(record)
@@ -61,6 +62,7 @@ def patch_transaction(record_id: UUID, body: TransactionPatch, session: SessionD
 @router.delete("/transactions/{record_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["transactions"])
 def delete_transaction(record_id: UUID, session: SessionDependency, owner_id: OwnerDependency):
     with session.begin():
+        finance.lock_owner(session, owner_id)
         finance.delete_record(session, finance.get_record(session, Transaction, owner_id, record_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -91,6 +93,7 @@ def get_subscription(record_id: UUID, session: SessionDependency, owner_id: Owne
 @router.patch("/subscriptions/{record_id}", response_model=SubscriptionResponse, tags=["subscriptions"])
 def patch_subscription(record_id: UUID, body: SubscriptionPatch, session: SessionDependency, owner_id: OwnerDependency):
     with session.begin():
+        finance.lock_owner(session, owner_id)
         record = finance.get_record(session, Subscription, owner_id, record_id)
         finance.update_record(session, record, body.model_dump(exclude_unset=True))
         result = SubscriptionResponse.model_validate(record)
@@ -100,6 +103,7 @@ def patch_subscription(record_id: UUID, body: SubscriptionPatch, session: Sessio
 @router.delete("/subscriptions/{record_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["subscriptions"])
 def delete_subscription(record_id: UUID, session: SessionDependency, owner_id: OwnerDependency):
     with session.begin():
+        finance.lock_owner(session, owner_id)
         finance.delete_record(session, finance.get_record(session, Subscription, owner_id, record_id))
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 

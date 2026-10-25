@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { request } from '../api/client';
 import { FinanceContext } from './financeStore';
 import type { Currency } from './financeStore';
+import { useAuth } from './authStore';
+import { dismissDataOperationNotice, getDataOperationState, subscribeDataOperations } from '../api/dataOperations';
+import { DataOperationGate } from '../components/DataConfirmationDialog';
 const defaultRates = { USD: 1, KZT: 475, EUR: .92, RUB: 88 };
-export function FinanceProvider({ children }: {
+function FinanceDataProvider({ children }: {
     children: ReactNode;
 }) {
     const [revision, setRevision] = useState(0);
@@ -19,6 +22,7 @@ export function FinanceProvider({ children }: {
         return defaultRates;
     });
     const [preferenceError, setPreferenceError] = useState('');
+    const [preferencesReady, setPreferencesReady] = useState(false);
     const [preferenceLoading, setPreferenceLoading] = useState(true);
     const saving = useRef(false);
     const preferenceGeneration = useRef(0);
@@ -33,6 +37,7 @@ export function FinanceProvider({ children }: {
                 }
                 updateCurrency(value.display_currency);
                 setPreferenceError('');
+                setPreferencesReady(true);
             })
             .catch(error => {
                 if (!controller.signal.aborted && generation === preferenceGeneration.current && !saving.current) {
@@ -88,7 +93,35 @@ export function FinanceProvider({ children }: {
     };
     return (
         <FinanceContext.Provider value={{ revision, refresh, currency, setCurrency, rates, preferenceError, preferenceLoading }}>
-            {children}
+            {preferencesReady ? children : (
+                <main className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-6">
+                    <div className="space-y-4 text-slate-700 dark:text-slate-200">
+                        {preferenceError ? <p role="alert">Unable to load account preferences. Financial pages remain paused.</p> : <p role="status">Loading account preferences…</p>}
+                        {preferenceError && <button type="button" onClick={refresh} className="rounded-lg bg-blue-600 px-4 py-2 text-white">Retry loading account data</button>}
+                    </div>
+                </main>
+            )}
         </FinanceContext.Provider>
+    );
+}
+
+export function FinanceProvider({ children }: { children: ReactNode }) {
+    const { user } = useAuth();
+    const userId = user?.id || '';
+    const operationState = useSyncExternalStore(subscribeDataOperations, () => getDataOperationState(userId));
+    if (operationState.operation) {
+        return <DataOperationGate key={`${operationState.operation.key}:${operationState.operation.status}`} operation={operationState.operation} />;
+    }
+    // Unmount the entire financial provider during a command. Its return starts clean caches and drafts.
+    return (
+        <>
+            {operationState.notice && (
+                <div role={operationState.notice.code === 'OPERATION_COMPLETED' ? 'status' : 'alert'} className="p-4 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 flex justify-between gap-4">
+                    <span>{operationState.notice.message}</span>
+                    <button type="button" onClick={() => dismissDataOperationNotice(userId)} className="underline">Dismiss</button>
+                </div>
+            )}
+            <FinanceDataProvider key={operationState.revision}>{children}</FinanceDataProvider>
+        </>
     );
 }

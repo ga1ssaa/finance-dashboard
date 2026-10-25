@@ -130,9 +130,35 @@ class CountEngine:
         self.conn.scalar.side_effect=self.scalar
         self.connect=MagicMock(side_effect=lambda:self.events.append('connect') or self.conn)
     def control(self,statement):
-        sql=str(statement)
-        assert not self.queries and sql=='SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY'
-        self.events.append(sql);self.readonly=True
+        from sqlalchemy.sql.elements import TextClause
+        from datetime import date,datetime,timezone
+        from decimal import Decimal
+        if isinstance(statement,TextClause):
+            sql=str(statement)
+            if sql.startswith('SET TRANSACTION'):
+                assert not self.queries and sql=='SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY'
+                self.events.append(sql);self.readonly=True
+                return SimpleNamespace()
+            assert self.readonly and 'alembic_version' in sql
+            return SimpleNamespace(scalars=lambda:SimpleNamespace(all=lambda:['0004_data_operations']))
+        assert self.readonly
+        table=statement.get_final_froms()[0]
+        class Result:
+            def __init__(self,rows):self.rows=rows
+            def __iter__(self):return iter(self.rows)
+            def close(self):pass
+        if table.name=='data_operation_receipts':
+            assert statement._limit_clause.value==0
+            return Result([])
+        self.queries.append(statement)
+        owners=[value for value in statement.compile().params.values() if isinstance(value,UUID)]
+        rows=[]
+        for owner,count in self.counts[table.name].items():
+            if owner not in owners:continue
+            for index in range(count):
+                values={'id':UUID(int=index+1),'owner_id':owner,'created_at':datetime(2026,10,25,tzinfo=timezone.utc),'updated_at':datetime(2026,10,25,tzinfo=timezone.utc),'title':'Synthetic','category':'Synthetic','type':'income','amount_usd':Decimal('1.00000000'),'transaction_date':date(2026,10,25),'service_name':'Synthetic','next_payment_date':date(2026,11,1),'icon':'credit-card','status':'active','display_currency':'USD','monthly_income_usd':Decimal('0'),'needs_spent_usd':Decimal('0'),'wants_spent_usd':Decimal('0'),'savings_usd':Decimal('0')}
+                rows.append(tuple(values[column.name] for column in statement.selected_columns))
+        return Result(rows)
     def scalar(self,statement):
         assert self.readonly,'Snapshot mode must precede every count'
         sql=str(statement.compile(dialect=postgresql.dialect()))
@@ -147,19 +173,21 @@ class CountEngine:
 
 def preview(engine,raw=None):
     from app.services.import_preview import preview_owner_import
-    return preview_owner_import(engine,OWNER,wrapped() if raw is None else raw)
+    settings=Settings(_env_file=None,DATABASE_URL='postgresql+psycopg://synthetic:unused@127.0.0.1:65432/unused')
+    user=AuthenticatedUser(id=UUID(int=222),email='synthetic@example.test',owner_id=OWNER,session_id=UUID(int=333))
+    return preview_owner_import(engine,user,wrapped() if raw is None else raw,settings=settings)
 
 
 def test_valid_preview_is_exact_summary_raw_digest_and_one_rollback_only_owner_snapshot():
     engine=CountEngine();raw=wrapped();result=preview(engine,raw).model_dump(mode='json')
-    assert set(result)=={'validation_status','document_sha256','source','current','replacement_impact','warnings'}
+    assert set(result)=={'validation_status','document_sha256','source','current','replacement_impact','warnings','preview_token','expires_at'}
     assert result['document_sha256']==hashlib.sha256(json.loads(raw)['document'].encode()).hexdigest()
     assert result['source']['counts']=={'transactions':1,'subscriptions':1,'budget_profiles':1,'preferences':1}
     assert result['current']['counts']=={'transactions':7,'subscriptions':3,'budget_profiles':1,'preferences':1}
     assert result['replacement_impact']=={'would_remove':result['current']['counts'],'would_create':result['source']['counts']}
     assert {warning['code'] for warning in result['warnings']}=={'PREVIEW_ONLY','REPLACE_ALL_DATA'}
     assert 'Synthetic' not in json.dumps(result)
-    assert not {'token','preview_token','receipt','state_hash','owner_id','user_id'} & result.keys()
+    assert not {'token','receipt','state_hash','owner_id','user_id'} & result.keys()
     assert engine.events==['connect','begin','SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY','rollback','close']
     assert len(engine.queries)==4
     engine.tx.commit.assert_not_called()
@@ -184,16 +212,21 @@ def test_invalid_input_does_not_acquire_financial_connection():
     engine.connect.assert_not_called()
 
 
-@pytest.mark.parametrize('count',[True,-1,None,'1',2])
-def test_bad_singleton_count_rolls_back_and_returns_no_preview(count):
+@pytest.mark.parametrize('count',[2,3])
+def test_duplicate_singleton_state_rolls_back_and_returns_no_preview(count):
     engine=CountEngine();engine.counts['preferences'][OWNER]=count
-    with pytest.raises(RuntimeError):preview(engine)
+    from pydantic import ValidationError
+    with pytest.raises(ValidationError):preview(engine)
     engine.tx.rollback.assert_called_once_with();engine.tx.commit.assert_not_called()
     assert engine.events[-1]=='close'
 
 
 def test_count_query_failure_rolls_back_without_commit_or_retry():
-    engine=CountEngine();engine.conn.scalar.side_effect=RuntimeError('synthetic query failure')
+    engine=CountEngine();original=engine.control
+    def failure(statement):
+        if not str(statement).startswith('SET TRANSACTION'):raise RuntimeError('synthetic query failure')
+        return original(statement)
+    engine.conn.execute.side_effect=failure
     with pytest.raises(RuntimeError):preview(engine)
     assert engine.connect.call_count==1
     engine.tx.rollback.assert_called_once_with();engine.tx.commit.assert_not_called()
@@ -248,7 +281,7 @@ def api(monkeypatch):
     engine=CountEngine()
     monkeypatch.setattr(application,'create_database_engine',lambda _:engine)
     app=application.create_app(Settings(_env_file=None,DATABASE_URL='postgresql+psycopg://synthetic:unused@127.0.0.1:65432/unused'))
-    app.dependency_overrides[get_current_user]=lambda:AuthenticatedUser(id=uuid4(),email='synthetic@example.test',owner_id=OWNER)
+    app.dependency_overrides[get_current_user]=lambda:AuthenticatedUser(id=uuid4(),email='synthetic@example.test',owner_id=OWNER,session_id=UUID(int=333))
     with TestClient(app) as client:
         yield SimpleNamespace(client=client,engine=engine,route=route,app=app)
 
@@ -264,7 +297,7 @@ def test_authenticated_http_preview_returns_summary_only_without_writing(api):
     assert response.status_code==200;private(response)
     assert response.json()['validation_status']=='valid'
     assert response.json()['current']['counts']['transactions']==7
-    assert set(response.json())=={'validation_status','document_sha256','source','current','replacement_impact','warnings'}
+    assert set(response.json())=={'validation_status','document_sha256','source','current','replacement_impact','warnings','preview_token','expires_at'}
     api.engine.tx.commit.assert_not_called()
 
 
@@ -310,14 +343,18 @@ def test_http_actual_chunk_size_not_content_length_controls_cap(monkeypatch):
         consumed.append('three');raise AssertionError('Do not drain an oversized stream')
     request=SimpleNamespace(query_params={},headers={'content-type':'application/json','content-length':'1'},stream=stream,app=SimpleNamespace(state=SimpleNamespace(engine=engine)))
     monkeypatch.setattr(route,'MAX_REQUEST_BYTES',20)
-    with pytest.raises(HTTPException) as caught:asyncio.run(route.import_preview(request,OWNER))
+    with pytest.raises(HTTPException) as caught:asyncio.run(route.import_preview(request,AuthenticatedUser(id=UUID(int=222),email='synthetic@example.test',owner_id=OWNER,session_id=UUID(int=333))))
     assert caught.value.status_code==413 and consumed==['one','two']
     engine.connect.assert_not_called()
 
 
 def test_database_failure_is_sanitized_and_rolls_back_preview(api):
     from sqlalchemy.exc import OperationalError
-    api.engine.conn.scalar.side_effect=OperationalError(None,None,Exception('PRIVATE_DRIVER_DATA_MARKER'))
+    original=api.engine.control
+    def fail(statement):
+        if not str(statement).startswith('SET TRANSACTION'):raise OperationalError(None,None,Exception('PRIVATE_DRIVER_DATA_MARKER'))
+        return original(statement)
+    api.engine.conn.execute.side_effect=fail
     response=api.client.post('/api/v1/data/import/preview',content=wrapped(),headers={'Content-Type':'application/json'})
     assert response.status_code==503;private(response)
     assert 'PRIVATE_' not in response.text
@@ -327,9 +364,9 @@ def test_database_failure_is_sanitized_and_rolls_back_preview(api):
 def test_preview_has_no_import_confirm_reset_or_legacy_execution_routes(api):
     schema=api.client.get('/openapi.json').json()
     paths={path for path in schema['paths'] if path.startswith('/api/v1/data/')}
-    assert paths=={'/api/v1/data/export','/api/v1/data/import/preview'}
+    assert paths=={'/api/v1/data/export','/api/v1/data/import/preview','/api/v1/data/reset/preview','/api/v1/data/import','/api/v1/data/reset','/api/v1/data/operations/{key}'}
     assert set(schema['paths']['/api/v1/data/import/preview'])=={'post'}
-    for path in ('/api/v1/data/import','/api/v1/data/reset','/api/v1/data/import/confirm','/api/v1/data/import/legacy'):
+    for path in ('/api/v1/data/import/confirm','/api/v1/data/import/legacy'):
         assert api.client.post(path,json={}).status_code==404
     api.engine.connect.assert_not_called()
 

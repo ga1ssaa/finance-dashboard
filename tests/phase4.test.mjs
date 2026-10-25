@@ -151,11 +151,13 @@ test('shared preferences ignore stale GETs, serialize saves and retain currency 
     request: (path, options) => new Promise((resolve, reject) => requests.push({ path, options, resolve, reject })),
   };
   const source = (await readFile(new URL('../src/state/FinanceProvider.tsx', import.meta.url), 'utf8'))
-    .replace(/import \{ useCallback, useEffect, useRef, useState \} from 'react';/, 'const {useCallback,useEffect,useRef,useState,request}=globalThis.__phase4Provider; const __createElement=(_tag,props)=>props.value;')
+    .replace(/import \{ useCallback, useEffect, useRef, useState, useSyncExternalStore \} from 'react';/, 'const {useCallback,useEffect,useRef,useState,request}=globalThis.__phase4Provider; const __createElement=(_tag,props)=>props.value;')
     .replace(/import \{ request \} from '..\/api\/client';/, '')
-    .replace(/import \{ FinanceContext \} from '.\/financeStore';/, 'const FinanceContext={Provider:null};');
+    .replace(/import \{ FinanceContext \} from '.\/financeStore';/, 'const FinanceContext={Provider:null};')
+    .replace(/^import .*from '.\/(?:authStore)';$/gm, '')
+    .replace(/^import .*from '..\/(?:api\/dataOperations|components\/DataConfirmationDialog)';$/gm, '');
   const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React, jsxFactory: '__createElement' } }).outputText;
-  const { FinanceProvider } = await import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`);
+  const { FinanceDataProvider: FinanceProvider } = await import(`data:text/javascript;base64,${Buffer.from(output + '\nexport { FinanceDataProvider };').toString('base64')}`);
   function render() { cursor = 0; const value = FinanceProvider({ children: null }); while (pendingEffects.length) pendingEffects.shift()(); return value; }
   const settle = () => new Promise(resolve => setImmediate(resolve));
   try {

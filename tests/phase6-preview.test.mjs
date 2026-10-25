@@ -8,7 +8,8 @@ let serial=0;
 const tick=()=>new Promise(resolve=>setImmediate(resolve));
 function deferred(){let resolve,reject;const promise=new Promise((a,b)=>{resolve=a;reject=b;});return{promise,resolve,reject};}
 const counts={transactions:1,subscriptions:0,budget_profiles:0,preferences:0};
-const response=()=>({validation_status:'valid',document_sha256:'a'.repeat(64),source:{format:'finance-dashboard',schema_version:1,exported_at:'2026-10-25T00:00:00Z',base_currency:'USD',counts},current:{counts:{transactions:2,subscriptions:3,budget_profiles:1,preferences:1}},replacement_impact:{would_remove:{transactions:2,subscriptions:3,budget_profiles:1,preferences:1},would_create:counts},warnings:[{code:'PREVIEW_ONLY',message:'Nothing is changed.'},{code:'REPLACE_ALL_DATA',message:'Future import would replace all data.'}]});
+const previewExpiresAt=new Date(Date.now()+600000).toISOString();
+const response=()=>({preview_token:'synthetic-preview-token',expires_at:previewExpiresAt,validation_status:'valid',document_sha256:'a'.repeat(64),source:{format:'finance-dashboard',schema_version:1,exported_at:'2026-10-25T00:00:00Z',base_currency:'USD',counts},current:{counts:{transactions:2,subscriptions:3,budget_profiles:1,preferences:1}},replacement_impact:{would_remove:{transactions:2,subscriptions:3,budget_profiles:1,preferences:1},would_create:counts},warnings:[{code:'PREVIEW_ONLY',message:'Nothing is changed.'},{code:'REPLACE_ALL_DATA',message:'Future import would replace all data.'}]});
 const rawDocument=' {"format":"finance-dashboard","schema_version":1,"exported_at":"2026-10-25T00:00:00Z","base_currency":"USD","data":{"transactions":[{"title":"Synthetic","amount_usd":"0.00000001","type":"income","category":"Synthetic","transaction_date":"2026-10-25"}],"subscriptions":[],"budget":null,"preferences":null}} ';
 function file(raw=rawDocument){const bytes=new TextEncoder().encode(raw);return{size:bytes.byteLength,name:'synthetic.json',arrayBuffer:async()=>bytes.buffer,text:()=>{throw new Error('Must read bytes with fatal UTF8, never File.text');}};}
 
@@ -26,14 +27,14 @@ async function previewModule(send=async()=>Response.json(response())){
  }finally{delete globalThis[key];}
 }
 
-test('preview posts exact original document string inside replace/v1 wrapper with no owner or mutation token',async()=>{
+test('preview posts exact original document string inside replace/v1 wrapper with no owner or operation receipt',async()=>{
  const api=await previewModule();const controller=new AbortController();
  const value=await api.previewImportFile(file(),controller.signal);
  assert.deepEqual(value,response());assert.equal(api.calls.length,1);
  const [url,options]=api.calls[0];assert.equal(url,'http://127.0.0.1:18085/api/v1/data/import/preview');assert.equal(options.method,'POST');
  assert.deepEqual(JSON.parse(options.body),{mode:'replace',source_format:'v1',document:rawDocument});
  assert.equal(options.signal,controller.signal);assert.equal(new Headers(options.headers).get('Content-Type'),'application/json');
- assert.equal('preview_token' in value,false);assert.equal('receipt' in value,false);
+ assert.equal(value.preview_token,'synthetic-preview-token');assert.ok(Number.isFinite(Date.parse(value.expires_at)));assert.equal('receipt' in value,false);
 });
 
 test('oversize selected file is rejected before reading bytes or sending HTTP',async()=>{
@@ -86,7 +87,7 @@ async function settingsHarness(){
   useEffect:callback=>{const i=cursor++;if(!(i in slots)){slots[i]=true;cleanup.push(callback());}},
   getSessionEpoch:()=>epoch,downloadAccountExport:async()=>{},
   previewImportFile:(selected,signal)=>{const pending=deferred();calls.push({selected,signal,...pending});return pending.promise;},
-  useSettings:()=>({currency:'USD',setCurrency:()=>{},preferenceError:'',preferenceLoading:false,refresh:()=>{}}),CURRENCY_SYMBOLS:{USD:'$'},ResourceStatus:()=>null,
+  useSettings:()=>({currency:'USD',setCurrency:()=>{},preferenceError:'',preferenceLoading:false,refresh:()=>{}}),CURRENCY_SYMBOLS:{USD:'$'},ResourceStatus:()=>null,DataConfirmationDialog:()=>null,
   __jsx:(type,props,...children)=>{
    if(typeof type==='function')return type(props||{});
    return{type,props:props||{},children:children.flat(Infinity).filter(item=>item!==false&&item!=null)};
@@ -97,7 +98,7 @@ async function settingsHarness(){
   let source=await readFile(new URL(path,import.meta.url),'utf8');
   const icons=source.match(/import \{([^}]+)\} from ["']lucide-react["'];?/)[1].split(',').map(value=>value.trim());
   source=source.replace(/^import .*$/gm,'');
-  const names='useState,useRef,useEffect,getSessionEpoch,downloadAccountExport,previewImportFile,useSettings,CURRENCY_SYMBOLS,ResourceStatus,__jsx'+(path.includes('SettingsPage')?',DangerZone':'');
+  const names='useState,useRef,useEffect,getSessionEpoch,downloadAccountExport,previewImportFile,useSettings,CURRENCY_SYMBOLS,ResourceStatus,DataConfirmationDialog,__jsx'+(path.includes('SettingsPage')?',DangerZone':'');
   source=`const {${names}}=globalThis.${key};\n${icons.map(name=>`const ${name}=${JSON.stringify(name)};`).join('\n')}\n${source}`;
   const code=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.React,jsxFactory:'__jsx'}}).outputText;
   return(await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).default;
@@ -113,10 +114,10 @@ async function settingsHarness(){
  }finally{delete globalThis[key];}
 }
 
-test('Settings file selection previews counts and warnings while final import and reset stay disabled',async()=>{
+test('Settings file selection previews counts and warnings before separate destructive confirmation',async()=>{
  const view=await settingsHarness();
- assert.equal(view.button('Confirm Import (unavailable)').props.disabled,true);
- assert.equal(view.button('Reset All Data').props.disabled,true);
+ assert.equal(view.button('Review import confirmation').props.disabled,true);
+ assert.equal(view.button('Review account reset').props.type,'button');
  assert.equal(view.button('Import Backup').props.type,'button');
  const selected=file();const pending=view.select(selected);
  assert.equal(view.calls.length,1);assert.equal(view.calls[0].selected,selected);
@@ -126,7 +127,7 @@ test('Settings file selection previews counts and warnings while final import an
  assert.ok(text.includes('a'.repeat(64))&&text.includes('No account data was changed.'));
  assert.ok(text.includes('Would remove')&&text.includes('Would create'));
  assert.ok(text.includes('Future import would replace all data.'));
- assert.equal(view.button('Confirm Import (unavailable)').props.disabled,true);
+ assert.equal(view.button('Review import confirmation').props.disabled,false);
  view.unmount();
 });
 
@@ -169,7 +170,7 @@ test('file read/validation failure is visible and clears loading without enablin
  view.calls[0].reject(new Error('Synthetic invalid backup'));await pending;
  assert.ok(view.nodes().some(node=>node.props.role==='alert'&&view.text(node)==='Synthetic invalid backup'));
  assert.ok(!view.nodes().some(node=>node.props.role==='status'&&view.text(node).includes('Validating')));
- assert.equal(view.button('Confirm Import (unavailable)').props.disabled,true);view.unmount();
+ assert.equal(view.button('Review import confirmation').props.disabled,true);view.unmount();
 });
 
 test('file BOM/duplicate keys are forwarded intact for strict server validation, not silently rewritten',async()=>{

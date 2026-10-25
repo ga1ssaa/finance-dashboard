@@ -76,6 +76,7 @@ class AuthenticatedUser:
     id: UUID
     email: str
     owner_id: UUID
+    session_id: UUID | None = None
 
 
 def get_current_user(request: Request, credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]) -> AuthenticatedUser:
@@ -102,7 +103,7 @@ def get_current_user(request: Request, credentials: Annotated[HTTPAuthorizationC
         ))
         if user is None:
             raise unauthorized()
-        return AuthenticatedUser(id=user.id, email=user.email, owner_id=user.owner_id)
+        return AuthenticatedUser(id=user.id, email=user.email, owner_id=user.owner_id, session_id=session_id)
 
 
 def cookie_options(production: bool) -> dict:

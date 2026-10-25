@@ -13,7 +13,7 @@ CHILDREN = [Transaction, Subscription, BudgetProfile, Preferences]
 def test_business_metadata_has_exactly_expected_tables():
     assert set(Base.metadata.tables) == {
         "owners", "transactions", "subscriptions", "budget_profiles", "preferences",
-        "users", "auth_sessions", "auth_refresh_tokens"
+        "users", "auth_sessions", "auth_refresh_tokens", "data_operation_receipts"
     }
 
 

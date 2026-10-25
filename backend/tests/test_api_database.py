@@ -34,6 +34,9 @@ def api(engine, phase5_settings, guarded_app):
     with engine.connect() as connection:
         outer = connection.begin()
         session = Session(bind=connection, join_transaction_mode="create_savepoint", expire_on_commit=False)
+        # Authenticated accounts already own a namespace; retained only in outer rollback.
+        session.add(Owner(id=owner_id))
+        session.commit()
         def override():
             with Session(bind=connection, join_transaction_mode="create_savepoint", expire_on_commit=False) as request_session:
                 yield request_session
@@ -142,10 +145,11 @@ def test_subscription_crud_summary_status_filters(api):
 
 def test_singleton_defaults_partial_updates_and_validation_atomicity(api):
     client, session, owner_id = api
-    # Ordinary read operations do not persist an owner.
+    # Ordinary reads preserve the existing authenticated namespace.
     assert client.get("/api/v1/dashboard").status_code == 200
     assert client.get("/api/v1/transactions").json()["total"] == 0
-    assert session.get(Owner, owner_id) is None
+    assert session.get(Owner, owner_id) is not None
+    assert client.get("/api/v1/dashboard").json()["transaction_count"] == 0
     session.commit()
     budget = client.get("/api/v1/budget")
     assert budget.status_code == 200
@@ -172,17 +176,18 @@ def test_tied_sort_is_stable_across_pages_and_queries_do_not_change_totals(api):
     assert client.get("/api/v1/transactions?offset=999").json()["items"] == []
 
 
-def test_invalid_create_does_not_bootstrap_owner_and_valid_followup_succeeds(api):
+def test_invalid_create_preserves_owner_and_valid_followup_succeeds(api):
     client, session, owner_id = api
     assert client.post("/api/v1/transactions", json=tx(amount_usd="0.000000001")).status_code == 422
-    assert session.get(Owner, owner_id) is None
+    assert session.get(Owner, owner_id) is not None
+    assert client.get("/api/v1/dashboard").json()["transaction_count"] == 0
     session.commit()
     created = post(client, "transactions", tx(amount_usd="0.00000001"))
     assert created["amount_usd"] == "0.00000001"
     assert client.get("/api/v1/dashboard").json()["transaction_count"] == 1
 
 
-def test_database_unique_conflict_rolls_back_owner_and_allows_followup(api, monkeypatch):
+def test_database_unique_conflict_rolls_back_financial_row_and_allows_followup(api, monkeypatch):
     from app.services import finance
     client, session, owner_id = api
     foreign = Owner()
@@ -199,13 +204,14 @@ def test_database_unique_conflict_rolls_back_owner_and_allows_followup(api, monk
         response = client.post("/api/v1/transactions", json=tx())
     assert response.status_code == 409, response.text
     assert "INSERT" not in response.text and str(duplicate_id) not in response.text
-    assert session.get(Owner, owner_id) is None
+    assert session.get(Owner, owner_id) is not None
+    assert client.get("/api/v1/dashboard").json()["transaction_count"] == 0
     session.commit()
     assert post(client, "transactions", tx())["amount_usd"] == "12.12345678"
     assert client.get("/api/v1/dashboard").json()["transaction_count"] == 1
 
 
-def test_database_check_failure_rolls_back_bootstrap_owner(api, monkeypatch):
+def test_database_check_failure_preserves_owner_and_rolls_back_financial_row(api, monkeypatch):
     from app.services import finance
     client, session, owner_id = api
     original = finance.create_record
@@ -216,7 +222,8 @@ def test_database_check_failure_rolls_back_bootstrap_owner(api, monkeypatch):
         response = client.post("/api/v1/transactions", json=tx())
     assert response.status_code == 422, response.text
     assert "INSERT" not in response.text and "ck_transactions" not in response.text
-    assert session.get(Owner, owner_id) is None
+    assert session.get(Owner, owner_id) is not None
+    assert client.get("/api/v1/dashboard").json()["transaction_count"] == 0
     session.commit()
     assert post(client, "transactions", tx())["amount_usd"] == "12.12345678"
 

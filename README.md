@@ -247,16 +247,22 @@ All persisted monetary values are canonical USD decimal strings with up to eight
 
 Settings → Export Backup downloads the authenticated account's complete financial snapshot from `GET /api/v1/data/export`. The versioned JSON contains canonical USD decimal strings, calendar dates, nullable budget/preferences, and no internal IDs or authentication data. Export uses a consistent read-only snapshot, independent of the current list page. Limits are 10,000 transactions, 1,000 subscriptions and 5 MiB of JSON; oversized exports fail explicitly rather than truncating data. Downloaded files contain unencrypted financial data and should be stored privately.
 
-Settings → Import Backup selects a local JSON file for a read-only preview through `POST /api/v1/data/import/preview`. Version 1 USD files are validated before current account counts are read; the preview shows file counts, current counts, hypothetical replacement impact and warnings. Files are limited to 5 MiB and encoded requests to 10 MiB. No records are imported, staged or replaced. The displayed SHA-256 identifies the document only and is not permission to perform a write; current counts may change after the preview.
+Settings → Import Backup selects a local JSON file for a read-only preview through `POST /api/v1/data/import/preview`. Version 1 USD files are validated before the account's complete financial state is fingerprinted; the preview shows file counts, current counts, hypothetical replacement impact and warnings. Files are limited to 5 MiB and encoded requests to 10 MiB. Selecting a file or requesting a preview never imports, stages or replaces records. The displayed SHA-256 identifies the document only. A separate signed authorization expires after ten minutes and is bound to the authenticated user/session, document and current financial state.
 
-Existing financial localStorage data is neither imported nor changed. Final import confirmation, reset and legacy migration remain disabled. No automatic migration from browser storage is performed. User JSON export and preview are separate from the private administrative PostgreSQL backup/restore tools.
+Import replacement and financial reset require a separate preview, the account password, an exact typed confirmation and a unique operation key. They replace/reset only the signed-in owner's financial resources; account, authentication sessions, other owners and existing receipts remain intact. Successful operations reload financial views and preferences. Uncertain responses keep financial pages paused: check the receipt or explicitly retry the same operation key with the original document and fresh confirmation. A missing receipt does not prove rollback. Never start a different operation while the outcome is unknown.
+
+Recovery metadata is kept only in memory across navigation and account switches. A full browser reload or tab closure loses that metadata. The confirmation and recovery screens display the operation key and warn before submission: retain the key outside the tab if you need later receipt lookup. Do not assume reload cancels a server operation. Passwords, authorization tokens and financial documents are not persisted to browser storage.
+
+**Migration approval boundary:** the new operations and authorization previews require revision `0004_data_operations`. Its migration and complete SQL are prepared offline only; they have not been applied by this implementation task. On `0003_auth`, these routes fail closed before financial changes. Export and ordinary financial CRUD remain available. Do not apply this migration without separate explicit approval and a verified target/preservation preflight.
+
+Existing financial localStorage data is neither imported nor changed. Legacy migration remains disabled. User JSON data operations are separate from the private administrative PostgreSQL backup/restore tools and never invoke them.
 
 Validation (Node.js 24 for the built-in TypeScript test loader):
 
 ```bash
 npm run lint
 npm run build
-node --test tests/phase4.test.mjs tests/phase5-auth.test.mjs tests/phase6-export.test.mjs tests/phase6-preview.test.mjs
+node --test tests/phase4.test.mjs tests/phase5-auth.test.mjs tests/phase6-export.test.mjs tests/phase6-preview.test.mjs tests/phase6-operations.test.mjs
 ```
 
 `tests/phase4-api.test.mjs` and its fixture describe the earlier unauthenticated integration phase; they are historical and are superseded by the authenticated Phase 5 checks. Do not point a historical fixture at normal development data.

@@ -12,8 +12,11 @@ from app.models import BudgetProfile, Owner, Preferences, Subscription, Transact
 from app.schemas import DateRange, SubscriptionQuery, TransactionQuery
 
 
-def bootstrap_owner(session: Session, owner_id: UUID) -> None:
-    session.execute(insert(Owner).values(id=owner_id).on_conflict_do_nothing(index_elements=[Owner.id]))
+def lock_owner(session: Session, owner_id: UUID) -> None:
+    """All financial writers acquire this existing namespace row first."""
+    record = session.scalar(select(Owner.id).where(Owner.id == owner_id).with_for_update())
+    if record is None:
+        raise HTTPException(status_code=401, detail="Authentication required", headers={"WWW-Authenticate": "Bearer"})
 
 
 def get_record(session: Session, model, owner_id: UUID, record_id: UUID):
@@ -24,7 +27,7 @@ def get_record(session: Session, model, owner_id: UUID, record_id: UUID):
 
 
 def create_record(session: Session, model, owner_id: UUID, values: dict):
-    bootstrap_owner(session, owner_id)
+    lock_owner(session, owner_id)
     record = model(owner_id=owner_id, **values)
     session.add(record)
     session.flush()
@@ -85,10 +88,10 @@ def list_records(session: Session, model, owner_id: UUID, query: TransactionQuer
 
 
 def get_singleton(session: Session, model, owner_id: UUID):
+    lock_owner(session, owner_id)
     record = session.scalar(select(model).where(model.owner_id == owner_id))
     if record is not None:
         return record
-    bootstrap_owner(session, owner_id)
     session.execute(insert(model).values(owner_id=owner_id)
                     .on_conflict_do_nothing(index_elements=[model.owner_id]))
     return session.scalar(select(model).where(model.owner_id == owner_id))

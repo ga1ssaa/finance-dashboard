@@ -10,6 +10,8 @@ export interface ResourceCounts {
 export interface ImportPreview {
     validation_status: 'valid';
     document_sha256: string;
+    preview_token: string;
+    expires_at: string;
     source: {
         format: 'finance-dashboard';
         schema_version: 1;
@@ -39,6 +41,8 @@ function readPreview(value: unknown): ImportPreview {
     const preview = value as ImportPreview | null;
     if (!preview || preview.validation_status !== 'valid'
         || typeof preview.document_sha256 !== 'string' || !/^[a-f0-9]{64}$/.test(preview.document_sha256)
+        || typeof preview.preview_token !== 'string' || !preview.preview_token
+        || typeof preview.expires_at !== 'string' || !Number.isFinite(Date.parse(preview.expires_at))
         || preview.source?.format !== 'finance-dashboard' || preview.source.schema_version !== 1
         || preview.source.base_currency !== 'USD' || typeof preview.source.exported_at !== 'string'
         || !isCounts(preview.source.counts) || !isCounts(preview.current?.counts)
@@ -50,7 +54,7 @@ function readPreview(value: unknown): ImportPreview {
     return preview;
 }
 
-export async function previewImportFile(file: File, signal?: AbortSignal): Promise<ImportPreview> {
+export async function readImportDocument(file: File, signal?: AbortSignal): Promise<string> {
     const epoch = getSessionEpoch();
     assertActive(epoch, signal);
     if (file.size > MAX_FILE_BYTES) throw new Error('Choose a JSON backup no larger than 5 MiB.');
@@ -73,6 +77,14 @@ export async function previewImportFile(file: File, signal?: AbortSignal): Promi
     if (new TextEncoder().encode(document).byteLength > MAX_FILE_BYTES) {
         throw new Error('Choose a JSON backup no larger than 5 MiB.');
     }
+    assertActive(epoch, signal);
+    return document;
+}
+
+export async function previewImportFile(file: File, signal?: AbortSignal): Promise<ImportPreview> {
+    const epoch = getSessionEpoch();
+    const document = await readImportDocument(file, signal);
+    assertActive(epoch, signal);
     // Only serialize the outer request. The document's decimal lexemes and duplicate keys stay intact.
     const body = JSON.stringify({ mode: 'replace', source_format: 'v1', document });
     if (new TextEncoder().encode(body).byteLength > MAX_REQUEST_BYTES) {

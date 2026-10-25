@@ -39,7 +39,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_origins=list(configured_settings.cors_allowed_origins),
         allow_credentials=True,
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
-        allow_headers=["Content-Type", "Authorization", "X-CSRF-Protection"],
+        allow_headers=["Content-Type", "Authorization", "X-CSRF-Protection", "Idempotency-Key"],
     )
     app.state.settings = configured_settings
     app.state.auth_rate_limiter = AuthRateLimiter()
