@@ -1,3 +1,5 @@
+import { useEffect, useRef, useState } from "react";
+import { downloadAccountExport } from "../api/dataExport";
 import ResourceStatus from "../components/ResourceStatus";
 import DangerZone from "../features/settings/DangerZone";
 import { Moon, Sun, Download, Upload, DollarSign } from "lucide-react";
@@ -10,6 +12,44 @@ interface SettingsPageProps {
 
 function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
     const { currency, setCurrency, preferenceError, preferenceLoading, refresh } = useSettings();
+    const [exporting, setExporting] = useState(false);
+    const [exportError, setExportError] = useState('');
+    const [exportMessage, setExportMessage] = useState('');
+    const pendingExport = useRef<AbortController | null>(null);
+    useEffect(() => () => {
+        pendingExport.current?.abort();
+        pendingExport.current = null;
+    }, []);
+    const handleExport = async () => {
+        if (pendingExport.current) return;
+        const controller = new AbortController();
+        pendingExport.current = controller;
+        setExporting(true);
+        setExportError('');
+        setExportMessage('');
+        try {
+            await downloadAccountExport(controller.signal);
+            if (pendingExport.current === controller && !controller.signal.aborted) {
+                setExportMessage('Download started. Check your browser downloads.');
+            }
+        } catch (error) {
+            if (pendingExport.current === controller && !controller.signal.aborted) {
+                setExportError(error instanceof Error ? error.message : 'Export failed. Please retry.');
+            }
+        } finally {
+            if (pendingExport.current === controller) {
+                pendingExport.current = null;
+                setExporting(false);
+            }
+        }
+    };
+    const cancelExport = () => {
+        pendingExport.current?.abort();
+        pendingExport.current = null;
+        setExporting(false);
+        setExportError('');
+        setExportMessage('Export canceled.');
+    };
     return (
         <div className="space-y-6">
         {/* Page Header */}
@@ -71,19 +111,31 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
                 Data Backup & Restore
                 </h3>
                 <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Backup and restore are unavailable for API-managed data. Existing browser data is left untouched.
+                Download all account transactions, subscriptions, budget inputs and currency preference as JSON. Amounts are exported in USD. Downloaded files contain unencrypted financial data; store them privately. Import and reset remain unavailable; existing browser data is left untouched.
                 </p>
             </div>
 
             <div className="flex flex-wrap items-center gap-3">
                         <button
-                            disabled title="Unavailable for API-managed data"
-                            className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-xl transition-colors cursor-pointer"
+                            type="button"
+                            disabled={exporting}
+                            aria-busy={exporting}
+                            onClick={handleExport}
+                            className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-xl transition-colors cursor-pointer disabled:opacity-60"
                             >
-                            <Download size={18} />
-                            Export Backup
+                            <Download size={18} aria-hidden="true" />
+                            {exporting ? 'Preparing export…' : 'Export Backup'}
                         </button>
 
+                        {exporting && (
+                            <button
+                                type="button"
+                                onClick={cancelExport}
+                                className="px-4 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 rounded-xl focus-visible:ring-2 focus-visible:ring-blue-500"
+                            >
+                                Cancel export
+                            </button>
+                        )}
                         <button
                             disabled title="Unavailable for API-managed data"
                             className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-xl transition-colors cursor-pointer"
@@ -93,6 +145,9 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
                         </button>
 
                     </div>
+                    {exporting && <p role="status" className="text-sm text-slate-500 dark:text-slate-400">Preparing your account export…</p>}
+                    {exportError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{exportError}</p>}
+                    {exportMessage && <p role="status" className="text-sm text-slate-600 dark:text-slate-300">{exportMessage}</p>}
                 </div>
 
                 {/* Danger Zone */}

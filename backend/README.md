@@ -438,3 +438,25 @@ docker compose --env-file .env -f compose.yaml down
 This preserves the named volume. Do not add `-v`: that deletes local database
 data. Real-database migrations, deployment, commits, and remote changes require
 separate explicit approval.
+
+## Financial JSON export
+
+`GET /api/v1/data/export` requires the same Bearer session as the financial API
+and accepts no query parameters, filters, pagination, owner selector, or body.
+It downloads a version-one `finance-dashboard` JSON document containing the full
+authenticated owner's transactions, subscriptions, budget inputs and display
+currency. Missing budget/preferences are `null` and are not created by export.
+The envelope includes `schema_version: 1`, a UTC `exported_at`, and
+`base_currency: "USD"`. Business records contain no IDs, owner/account fields,
+audit timestamps, credentials or session data. Money uses exactly eight decimal
+places and calendar dates use `YYYY-MM-DD`; identical records remain distinct.
+
+All reads use one dedicated repeatable-read, read-only transaction that is
+rolled back and closed after serialization. The response has `Cache-Control:
+no-store`, `Pragma: no-cache`, `X-Content-Type-Options: nosniff`, and a safe UTC
+attachment filename. Exports exceeding 10000 transactions, 1000 subscriptions,
+or 5 MiB of UTF-8 JSON return 413 without truncation or a partial download.
+Database and stored-data failures return generic errors without row values.
+
+This endpoint does not run PostgreSQL archive utilities or modify the database.
+Product import, reset and merge operations are not implemented in this phase.

@@ -245,14 +245,16 @@ Transactions and subscriptions are paginated and filtered by the server. Dashboa
 
 All persisted monetary values are canonical USD decimal strings with up to eight fractional digits. Display currency is an API preference; rates and theme remain browser-local. Forms freeze their currency/rate when opened. Unchanged monetary inputs preserve their exact canonical value; changed inputs use exact decimal conversion and reject conversions requiring more than eight USD decimal places. Choose USD for values that cannot be represented exactly after conversion. Manual budget income, needs, wants, and savings inputs remain independent from transactions.
 
-Existing financial localStorage data is neither imported nor changed. Backup, restore, and reset controls are disabled for API-managed data. No automatic migration from browser storage is performed.
+Settings → Export Backup downloads the authenticated account's complete financial snapshot from `GET /api/v1/data/export`. The versioned JSON contains canonical USD decimal strings, calendar dates, nullable budget/preferences, and no internal IDs or authentication data. Export uses a consistent read-only snapshot, independent of the current list page. Limits are 10,000 transactions, 1,000 subscriptions and 5 MiB of JSON; oversized exports fail explicitly rather than truncating data. Downloaded files contain unencrypted financial data and should be stored privately.
+
+Existing financial localStorage data is neither imported nor changed. Import, reset and legacy migration remain disabled. No automatic migration from browser storage is performed. This user JSON download is separate from the private administrative PostgreSQL backup/restore tools.
 
 Validation (Node.js 24 for the built-in TypeScript test loader):
 
 ```bash
 npm run lint
 npm run build
-node --test tests/phase4.test.mjs tests/phase5-auth.test.mjs
+node --test tests/phase4.test.mjs tests/phase5-auth.test.mjs tests/phase6-export.test.mjs
 ```
 
 `tests/phase4-api.test.mjs` and its fixture describe the earlier unauthenticated integration phase; they are historical and are superseded by the authenticated Phase 5 checks. Do not point a historical fixture at normal development data.

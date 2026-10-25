@@ -11,6 +11,7 @@ from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError, SQLAlch
 
 from app.api.finance import router as finance_router
 from app.api.auth import router as auth_router
+from app.api.data import router as data_router
 from app.auth import AuthProtectionMiddleware, AuthRateLimiter
 from app.config import Settings
 from app.db import create_database_engine, create_session_factory
@@ -44,6 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.auth_rate_limiter = AuthRateLimiter()
     app.include_router(finance_router)
     app.include_router(auth_router)
+    app.include_router(data_router)
 
     @app.exception_handler(RequestValidationError)
     async def invalid_request(request: Request, exc: RequestValidationError) -> JSONResponse:
