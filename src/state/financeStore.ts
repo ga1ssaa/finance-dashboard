@@ -5,7 +5,10 @@ interface FinanceState {
     refresh: () => void;
     currency: Currency;
     setCurrency: (value: Currency) => Promise<void>;
-    rates: Record<Currency, number>;
+    rates: Partial<Record<Currency, string | number>>;
+    ratesUpdatedAt?: number | null;
+    ratesLoading?: boolean;
+    rateError?: string;
     preferenceError: string;
     preferenceLoading: boolean;
 }

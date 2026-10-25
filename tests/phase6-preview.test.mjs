@@ -88,8 +88,9 @@ async function settingsHarness(){
   getSessionEpoch:()=>epoch,downloadAccountExport:async()=>{},
   previewImportFile:(selected,signal)=>{const pending=deferred();calls.push({selected,signal,...pending});return pending.promise;},
   useSettings:()=>({currency:'USD',setCurrency:()=>{},preferenceError:'',preferenceLoading:false,refresh:()=>{}}),CURRENCY_SYMBOLS:{USD:'$'},ResourceStatus:()=>null,DataConfirmationDialog:()=>null,
+  SelectControl:props=>deps.__jsx('select',props,...(props.children||[])),
   __jsx:(type,props,...children)=>{
-   if(typeof type==='function')return type(props||{});
+   if(typeof type==='function')return type({...props,children:children.flat(Infinity)});
    return{type,props:props||{},children:children.flat(Infinity).filter(item=>item!==false&&item!=null)};
   },
  };
@@ -98,7 +99,7 @@ async function settingsHarness(){
   let source=await readFile(new URL(path,import.meta.url),'utf8');
   const icons=source.match(/import \{([^}]+)\} from ["']lucide-react["'];?/)[1].split(',').map(value=>value.trim());
   source=source.replace(/^import .*$/gm,'');
-  const names='useState,useRef,useEffect,getSessionEpoch,downloadAccountExport,previewImportFile,useSettings,CURRENCY_SYMBOLS,ResourceStatus,DataConfirmationDialog,__jsx'+(path.includes('SettingsPage')?',DangerZone':'');
+  const names='useState,useRef,useEffect,getSessionEpoch,downloadAccountExport,previewImportFile,useSettings,CURRENCY_SYMBOLS,ResourceStatus,DataConfirmationDialog,SelectControl,__jsx'+(path.includes('SettingsPage')?',DangerZone':'');
   source=`const {${names}}=globalThis.${key};\n${icons.map(name=>`const ${name}=${JSON.stringify(name)};`).join('\n')}\n${source}`;
   const code=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.React,jsxFactory:'__jsx'}}).outputText;
   return(await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`)).default;

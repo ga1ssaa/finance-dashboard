@@ -140,17 +140,18 @@ async function settingsHarness() {
     downloadAccountExport: signal => { calls.push(signal); return pending.promise; },
     previewImportFile: async () => { throw new Error('Preview is outside this export test'); }, getSessionEpoch: () => 1,
     useSettings: () => ({ currency: 'EUR', setCurrency: () => {}, preferenceError: '', preferenceLoading: false, refresh: () => {} }),
+    SelectControl: props => dependencies.__jsx('select', props, ...(props.children || [])),
     CURRENCY_SYMBOLS: { USD: '$', EUR: '€' }, ResourceStatus: () => null, DataConfirmationDialog: () => null,
-    __jsx: (type, props, ...children) => typeof type === 'function' ? type(props || {}) : { type, props: props || {}, children: children.flat(Infinity).filter(child => child !== false && child != null) },
+    __jsx: (type, props, ...children) => typeof type === 'function' ? type({ ...props, children: children.flat(Infinity) }) : { type, props: props || {}, children: children.flat(Infinity).filter(child => child !== false && child != null) },
   };
   globalThis[key] = dependencies;
   const load = async path => {
     let source = await readFile(new URL(path, import.meta.url), 'utf8');
     const icons = source.match(/import \{([^}]+)\} from ["']lucide-react["'];?/)[1].split(',').map(name => name.trim());
     source = source.replace(/^import .*$/gm, '');
-    source = `const {useState,useRef,useEffect,downloadAccountExport,previewImportFile,getSessionEpoch,useSettings,CURRENCY_SYMBOLS,ResourceStatus,DataConfirmationDialog,DangerZone,__jsx}=globalThis.${key};\n${icons.map(name => `const ${name}=${JSON.stringify(name)};`).join('\n')}\n${source}`;
+    source = `const {useState,useRef,useEffect,downloadAccountExport,previewImportFile,getSessionEpoch,useSettings,CURRENCY_SYMBOLS,ResourceStatus,DataConfirmationDialog,DangerZone,SelectControl,__jsx}=globalThis.${key};\n${icons.map(name => `const ${name}=${JSON.stringify(name)};`).join('\n')}\n${source}`;
     // DangerZone defines its own name, so remove the unused binding from its wrapper.
-    if (path.includes('DangerZone')) source = source.replace('ResourceStatus,DataConfirmationDialog,DangerZone,__jsx', 'ResourceStatus,__jsx');
+    if (path.includes('DangerZone')) source = source.replace('ResourceStatus,DataConfirmationDialog,DangerZone,SelectControl,__jsx', 'ResourceStatus,SelectControl,__jsx');
     const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React, jsxFactory: '__jsx' } }).outputText;
     return (await import(`data:text/javascript;base64,${Buffer.from(output).toString('base64')}`)).default;
   };

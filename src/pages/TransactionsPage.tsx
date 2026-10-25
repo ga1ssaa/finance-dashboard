@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Plus, Sun, Moon } from "lucide-react";
+import { Search, Plus } from "lucide-react";
 import type { Transaction } from "../types/finance";
 import { useResource } from "../hooks/useResource";
 import { transactionFromApi } from "../hooks/useTransactions";
@@ -13,11 +13,9 @@ interface TransactionsPageProps {
     onDeleteTransaction: (id: string | number) => void;
     onEditTransaction: (transaction: Transaction) => void;
     onOpenAddModal: () => void;
-    isDarkMode?: boolean;
-    toggleTheme?: () => void;
 }
 
-function TransactionsPage({onDeleteTransaction, onEditTransaction, onOpenAddModal, isDarkMode, toggleTheme}: TransactionsPageProps) {
+function TransactionsPage({onDeleteTransaction, onEditTransaction, onOpenAddModal}: TransactionsPageProps) {
     const [searchTerm, setSearchTerm] = useState('');
     const [filterType, setFilterType] = useState<FilterType>('all');
     const [sortBy, setSortBy] = useState<SortType>('date-desc');
@@ -30,32 +28,22 @@ function TransactionsPage({onDeleteTransaction, onEditTransaction, onOpenAddModa
     const processedTransactions = (resource.data?.items || []).map(transactionFromApi);
 
     return (
-            <div className="space-y-6">
+            <div className="ui-page">
             {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="ui-page-header">
                 <div>
-                <h2 className="font-serif font-bold text-2xl text-slate-800 dark:text-white transition-colors">
+                <h2 className="ui-page-title">
                     All Transactions
                 </h2>
-                <p className="text-slate-500 dark:text-slate-400 text-sm transition-colors">
+                <p className="ui-page-description">
                     Manage and search your complete history
                 </p>
                 </div>
 
                 <div className="flex items-center gap-3">
-                {toggleTheme && (
-                    <button
-                        onClick={toggleTheme}
-                        className="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm cursor-pointer"
-                        title="Toggle Dark Mode"
-                    >
-                        {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
-                    </button>
-                )}
-
                 <button
                     onClick={onOpenAddModal}
-                    className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-sm cursor-pointer transition-colors w-fit"
+                    className="flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-ink px-4 py-2.5 rounded-control font-semibold text-sm shadow-none cursor-pointer transition-colors w-fit"
                 >
                     <Plus size={18} />
                     <span>Add Transaction</span>
@@ -64,15 +52,16 @@ function TransactionsPage({onDeleteTransaction, onEditTransaction, onOpenAddModa
             </div>
 
             {/* Search Bar + Filters */}
-            <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm flex flex-col md:flex-row gap-4 items-center justify-between transition-colors">
+            <div className="ui-panel flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                 <div className="relative w-full md:w-80">
-                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-secondary" />
                 <input
                     type="text"
+                    aria-label="Search transactions by title or category"
                     placeholder="Search by title or category..."
                     value={searchTerm}
                     onChange={(e) => { setSearchTerm(e.target.value); setOffset(0); }}
-                    className="w-full pl-10 pr-4 py-2 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-sm text-slate-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-colors"
+                    className="w-full pl-10 pr-4 py-2 bg-canvas border border-control rounded-control text-sm text-primary focus:outline-none focus:ring-2 focus:ring-accent/20 transition-colors"
                 />
                 </div>
 
@@ -85,12 +74,12 @@ function TransactionsPage({onDeleteTransaction, onEditTransaction, onOpenAddModa
             </div>
 
         {/* Full List */}
-            <div className="bg-white dark:bg-slate-800 p-6 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm transition-colors space-y-2">
+            <div className="ui-panel">
+                {processedTransactions.length > 0 && <div aria-hidden="true" className="ui-transaction-columns"><span>Transaction</span><span>Category</span><span>Date</span><span className="text-right">Amount</span><span className="text-right">Actions</span></div>}
+                <div className="divide-y divide-subtle">
                 <ResourceStatus loading={resource.loading} error={resource.error} retry={resource.retry} />
                 {!resource.loading && !resource.error && processedTransactions.length === 0 ? (
-                <div className="p-8 text-center text-slate-400 dark:text-slate-500 text-sm">
-                    No transactions found.
-                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3 py-3"><div><p className="font-medium">No transactions found.</p><p className="mt-1 text-sm text-secondary">Add a record or adjust your search and filters.</p></div><button type="button" onClick={onOpenAddModal} className="ui-primary-action">Add Transaction</button></div>
                 ) : (
                 processedTransactions.map((tx) => (
                     <TransactionItem
@@ -101,8 +90,9 @@ function TransactionsPage({onDeleteTransaction, onEditTransaction, onOpenAddModa
                     />
                     ))
                 )}
+                </div>
             </div>
-            <div className="flex items-center justify-between text-sm text-slate-600 dark:text-slate-300">
+            <div className="ui-pagination">
                 <button disabled={offset===0 || resource.loading} onClick={()=>setOffset(Math.max(0,offset-20))}>Previous</button>
                 <span>{resource.data?.total || 0} transactions · Page {Math.floor(offset/20)+1}</span>
                 <button disabled={resource.loading || !resource.data || offset+20 >= resource.data.total} onClick={()=>setOffset(offset+20)}>Next</button>

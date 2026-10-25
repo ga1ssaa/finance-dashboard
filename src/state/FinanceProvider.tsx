@@ -6,21 +6,19 @@ import type { Currency } from './financeStore';
 import { useAuth } from './authStore';
 import { dismissDataOperationNotice, getDataOperationState, subscribeDataOperations } from '../api/dataOperations';
 import { DataOperationGate } from '../components/DataConfirmationDialog';
-const defaultRates = { USD: 1, KZT: 475, EUR: .92, RUB: 88 };
+import { parseRateResponse, rateIsFresh, RATE_REFRESH_MS, readRateCache } from '../utils/exchangeRates';
+const canonicalRate = { USD: '1' };
 function FinanceDataProvider({ children }: {
     children: ReactNode;
 }) {
     const [revision, setRevision] = useState(0);
     const [currency, updateCurrency] = useState<Currency>('USD');
-    const [rates, setRates] = useState(() => {
-        try {
-            const cached = JSON.parse(localStorage.getItem('finance_app_exchange_rates') || 'null');
-            if (cached && Object.keys(defaultRates).every(key => Number.isFinite(cached[key]) && cached[key] > 0))
-                return cached as typeof defaultRates;
-        }
-        catch { /* use fallback rates */ }
-        return defaultRates;
+    const [quote, setQuote] = useState(() => {
+        try { return readRateCache(localStorage); } catch { return null; }
     });
+    const rates = quote?.rates || canonicalRate;
+    const [ratesLoading, setRatesLoading] = useState(!quote);
+    const [rateError, setRateError] = useState('');
     const [preferenceError, setPreferenceError] = useState('');
     const [preferencesReady, setPreferencesReady] = useState(false);
     const [preferenceLoading, setPreferenceLoading] = useState(true);
@@ -52,23 +50,31 @@ function FinanceDataProvider({ children }: {
         return () => controller.abort();
     }, [revision]);
     useEffect(() => {
-        // Only exchange-rate cache is browser-local; financial legacy keys stay untouched.
-        const lastUpdated = Number(localStorage.getItem('finance_app_rates_updated_at') || 0);
-        if (Date.now() - lastUpdated < 12 * 60 * 60 * 1000)
-            return;
+        if (quote && rateIsFresh(quote.publishedAt) && Date.now() - quote.fetchedAt < RATE_REFRESH_MS) return;
         const controller = new AbortController();
-        fetch('https://open.er-api.com/v6/latest/USD', { signal: controller.signal }).then(response => response.json()).then(data => {
-            if (!data.rates)
-                return;
-            const next = { USD: 1, KZT: data.rates.KZT, EUR: data.rates.EUR, RUB: data.rates.RUB };
-            if (Object.values(next).every(value => Number.isFinite(value) && value > 0)) {
-                setRates(next);
-                localStorage.setItem('finance_app_exchange_rates', JSON.stringify(next));
-                localStorage.setItem('finance_app_rates_updated_at', String(Date.now()));
-            }
-        }).catch(() => { });
+        Promise.resolve().then(() => {
+            if (controller.signal.aborted) throw new Error('Exchange-rate request canceled.');
+            setRatesLoading(true);
+            return fetch('https://open.er-api.com/v6/latest/USD', { signal: controller.signal });
+        })
+            .then(async response => {
+                if (!response.ok) throw new Error('Unable to load exchange rates. Choose USD or retry.');
+                return parseRateResponse(await response.text());
+            })
+            .then(next => {
+                if (controller.signal.aborted) return;
+                setQuote(next);
+                setRatesLoading(false);
+                setRateError('');
+                // Cache failure must not discard a validated in-memory quote.
+                try { localStorage.setItem('finance_app_exchange_rates', JSON.stringify(next)); } catch { /* memory remains usable */ }
+            })
+            .catch(error => {
+                if (!controller.signal.aborted) setRateError(error instanceof Error ? error.message : 'Exchange rates unavailable.');
+            })
+            .finally(() => { if (!controller.signal.aborted) setRatesLoading(false); });
         return () => controller.abort();
-    }, []);
+    }, [revision, quote]);
     const setCurrency = async (value: Currency) => {
         if (saving.current)
             return;
@@ -92,7 +98,7 @@ function FinanceDataProvider({ children }: {
         }
     };
     return (
-        <FinanceContext.Provider value={{ revision, refresh, currency, setCurrency, rates, preferenceError, preferenceLoading }}>
+        <FinanceContext.Provider value={{ revision, refresh, currency, setCurrency, rates, ratesUpdatedAt: quote?.publishedAt ?? null, ratesLoading, rateError, preferenceError, preferenceLoading }}>
             {preferencesReady ? children : (
                 <main className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-6">
                     <div className="space-y-4 text-slate-700 dark:text-slate-200">

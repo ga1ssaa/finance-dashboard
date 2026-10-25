@@ -4,47 +4,32 @@ import { useState } from "react";
 import { useBudget } from "../hooks/useBudget";
 import BudgetGoalsWidget from "../features/budget/BudgetGoalsWidget";
 import BudgetModal from "../components/modals/BudgetModal";
-import { Moon, Sun, Settings } from "lucide-react";
+import { Settings } from "lucide-react";
 
-interface BudgetGoalsPageProps {
-    isDarkMode?: boolean;
-    toggleTheme?: () => void;
-}
-
-function BudgetGoalsPage({ isDarkMode, toggleTheme }: BudgetGoalsPageProps) {
+function BudgetGoalsPage() {
     const { monthlyIncome, spentData, data, saveBudget, loading, error, retry } = useBudget();
 
     const {preferenceLoading, preferenceError} = useSettings();
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     return (
-        <div className="space-y-6">
+        <div className="ui-page">
             {/* Page Header */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="ui-page-header">
                 <div>
-                    <h2 className="font-serif font-bold text-2xl text-slate-800 dark:text-white transition-colors">
+                    <h2 className="ui-page-title">
                         Budget and Goals
                     </h2>
-                    <p className="text-slate-500 dark:text-slate-400 text-sm transition-colors">
+                    <p className="ui-page-description">
                         Track your 50/30/20 rule limits and financial targets
                     </p>
                 </div>
 
-                {/* Theme Toggle and Set Budget Button */}
+                {/* Set Budget Button */}
                 <div className="flex items-center gap-3">
-                    {toggleTheme && (
-                        <button
-                            onClick={toggleTheme}
-                            className="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm cursor-pointer"
-                            title="Toggle Dark Mode"
-                        >
-                            {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
-                        </button>
-                    )}
-
                     <button
                         disabled={!data || preferenceLoading || Boolean(preferenceError)} onClick={() => setIsModalOpen(true)}
-                        className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-sm cursor-pointer transition-colors w-fit"
+                        className="flex items-center gap-2 bg-accent hover:bg-accent-hover text-accent-ink px-4 py-2.5 rounded-control font-semibold text-sm shadow-none cursor-pointer transition-colors w-fit"
                     >
                         <Settings size={18} />
                         <span>Set Budget</span>
@@ -54,12 +39,19 @@ function BudgetGoalsPage({ isDarkMode, toggleTheme }: BudgetGoalsPageProps) {
 
             <ResourceStatus loading={loading} error={error} retry={retry} />
             {/* Main Content Area */}
-            <div className="w-full">
-                <BudgetGoalsWidget 
-                    monthlyIncome={monthlyIncome}
-                    spentData={spentData}
-                />
-            </div>
+            {!loading && !error && data && (
+                <div className="w-full">
+                    {monthlyIncome === 0 && spentData.needs === 0 && spentData.wants === 0 && spentData.savings === 0 ? (
+                        <div className="ui-empty-state">
+                            <div>
+                                <p className="font-medium">Build your monthly plan.</p>
+                                <p className="mt-1 text-sm text-secondary">Manually allocate income to needs, wants and savings.</p>
+                            </div>
+                            <button type="button" disabled={preferenceLoading || Boolean(preferenceError)} onClick={() => setIsModalOpen(true)} className="ui-primary-action">Set Budget</button>
+                        </div>
+                    ) : <BudgetGoalsWidget monthlyIncome={monthlyIncome} spentData={spentData} />}
+                </div>
+            )}
 
             {/* Modal */}
             {data && isModalOpen && <BudgetModal

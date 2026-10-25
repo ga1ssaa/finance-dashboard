@@ -56,22 +56,22 @@ export default function BudgetModal({ isOpen, onClose, onSubmit, currentBudget }
         }
     };
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-slate-800 rounded-2xl w-full max-w-md shadow-xl p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/50">
+            <div className="bg-surface rounded-modal max-h-[90dvh] overflow-y-auto w-full max-w-md shadow-overlay p-6">
                 <div className="flex justify-between mb-4">
-                    <h2 className="font-serif text-xl font-bold text-slate-800 dark:text-white">Set Budget</h2>
+                    <h2 className="font-sans text-xl font-bold text-primary">Set Budget</h2>
                     <button disabled={saving} onClick={onClose} aria-label="Close budget">
                         <X size={20} />
                     </button>
                 </div>
                 <form onSubmit={submit} className="space-y-4">
-                    <p className="text-sm text-slate-500">
+                    <p className="text-sm text-secondary">
                         These manual budget inputs are independent of transaction totals.
                         Currency: {currency} ({CURRENCY_SYMBOLS[currency]}).
                     </p>
                     {error && <p role="alert" className="text-red-500">{error}</p>}
                     {fields.map(([key, label]) => (
-                        <label key={key} className="block text-sm text-slate-700 dark:text-slate-300">
+                        <label key={key} className="block text-sm text-secondary">
                             {label}
                             <input
                                 aria-label={label}
@@ -82,7 +82,7 @@ export default function BudgetModal({ isOpen, onClose, onSubmit, currentBudget }
                                     setValues({ ...values, [key]: e.target.value });
                                     setDirty({ ...dirty, [key]: true });
                                 }}
-                                className="w-full px-4 py-2 mt-1 rounded-lg border dark:border-slate-700 dark:bg-slate-900"
+                                className="w-full px-4 py-2 mt-1 rounded-control border dark:border-control dark:bg-canvas"
                             />
                         </label>
                     ))}
@@ -91,7 +91,7 @@ export default function BudgetModal({ isOpen, onClose, onSubmit, currentBudget }
                         <button
                             type="submit"
                             disabled={saving}
-                            className="px-4 py-2 rounded-xl bg-blue-600 text-white"
+                            className="px-4 py-2 rounded-control bg-accent text-accent-ink font-semibold"
                         >
                             {saving ? 'Saving…' : 'Save Budget'}
                         </button>

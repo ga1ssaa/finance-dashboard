@@ -4,17 +4,18 @@ const THEME_KEY = "finance_app_theme";
 
 export default function UseTheme(){
     const [isDarkMode, setIsDarkMode] = useState(() => {
-        return localStorage.getItem(THEME_KEY) === "dark";
+        try { return localStorage.getItem(THEME_KEY) === "dark"; }
+        catch { return false; }
     });
 
     useEffect(() => {
         if (isDarkMode) {
             document.documentElement.classList.add('dark');
-            localStorage.setItem(THEME_KEY, 'dark');
         } else {
             document.documentElement.classList.remove('dark');
-            localStorage.setItem(THEME_KEY, 'light');
         }
+        // Theme persistence is optional; blocked storage must never prevent signing in.
+        try { localStorage.setItem(THEME_KEY, isDarkMode ? 'dark' : 'light'); } catch { /* retain in-memory theme */ }
     }, [isDarkMode]);
 
     const toggleTheme = () => setIsDarkMode((prev) => !prev);

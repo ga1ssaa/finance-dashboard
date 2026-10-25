@@ -1,3 +1,4 @@
+import SelectControl from "../components/SelectControl";
 import { useEffect, useRef, useState } from "react";
 import { downloadAccountExport } from "../api/dataExport";
 import { previewImportFile } from "../api/importPreview";
@@ -5,7 +6,7 @@ import type { ImportPreview, ResourceCounts } from "../api/importPreview";
 import { getSessionEpoch } from "../api/authSession";
 import ResourceStatus from "../components/ResourceStatus";
 import { DataConfirmationDialog } from "../components/DataConfirmationDialog";
-import { Moon, Sun, Download, Upload, DollarSign } from "lucide-react";
+import { Download, Upload, DollarSign } from "lucide-react";
 import { useSettings, CURRENCY_SYMBOLS, type Currency } from "../hooks/useSettings";
 
 const previewResources: { key: keyof ResourceCounts; label: string }[] = [
@@ -15,12 +16,7 @@ const previewResources: { key: keyof ResourceCounts; label: string }[] = [
     { key: 'preferences', label: 'Currency preference' },
 ];
 
-interface SettingsPageProps {
-    isDarkMode?: boolean;
-    toggleTheme?: () => void;
-}
-
-function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
+function SettingsPage() {
     const { currency, setCurrency, preferenceError, preferenceLoading, refresh } = useSettings();
     const [exporting, setExporting] = useState(false);
     const [exportError, setExportError] = useState('');
@@ -124,67 +120,63 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
         setPreviewError('');
     };
     return (
-        <div className="space-y-6">
+        <div className="ui-page">
         {/* Page Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="ui-page-header">
             <div>
-                <h2 className="font-serif font-bold text-2xl text-slate-800 dark:text-white transition-colors">
+                <h2 className="ui-page-title">
                     Settings
                 </h2>
-                <p className="text-slate-500 dark:text-slate-400 text-sm transition-colors">
+                <p className="ui-page-description">
                     Manage your app preferences and data backups
                 </p>
             </div>
-
-                {toggleTheme && (
-                <button
-                    onClick={toggleTheme}
-                    className="p-2.5 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors shadow-sm cursor-pointer w-fit"
-                    title="Toggle Dark Mode"
-                >
-                    {isDarkMode ? <Sun size={16} /> : <Moon size={16} />}
-                </button>
-                )}
         </div>
 
-        <div className="max-w-4xl space-y-6">
+        <div className="min-w-0 max-w-4xl space-y-4">
             <ResourceStatus error={preferenceError} retry={refresh} />
             {/* Currency Preference */}
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm transition-colors">
-                <div className="flex items-center justify-between gap-4">
+            <div className="ui-panel">
+                <div className="flex flex-wrap items-center justify-between gap-4">
                     <div>
-                        <h3 className="font-semibold text-lg text-slate-800 dark:text-white flex items-center gap-2">
-                            <DollarSign size={20} className="text-blue-500" />
+                        <h3 className="font-semibold text-lg text-primary flex items-center gap-2">
+                            <DollarSign size={20} className="text-accent" />
                             Currency Symbol
                         </h3>
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                        <p className="text-sm leading-6 text-secondary mt-1">
                             Choose the main currency for your application interface
                         </p>
                     </div>
 
-                    <select
-                    disabled={preferenceLoading}
-                    value={currency}
-                    onChange={(e) => setCurrency(e.target.value as Currency)}
-                    className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-white font-bold border border-slate-200 dark:border-slate-600 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    <SelectControl
+                        containerClassName="shrink-0"
+                        aria-label="Display currency"
+                        disabled={preferenceLoading}
+                        value={currency}
+                        onChange={(e) => setCurrency(e.target.value as Currency)}
+                        className="pl-4 py-2 rounded-control bg-muted text-primary font-medium border border-control dark:border-control cursor-pointer focus:outline-none focus:ring-2 focus:ring-accent"
                     >
-                    {(Object.keys(CURRENCY_SYMBOLS) as Currency[]).map((curr) => (
-                        <option key={curr} value={curr}>
-                        {curr} ({CURRENCY_SYMBOLS[curr]})
-                        </option>
-                    ))}
-                    </select>
+                        {(Object.keys(CURRENCY_SYMBOLS) as Currency[]).map((curr) => (
+                            <option key={curr} value={curr}>
+                                {curr} ({CURRENCY_SYMBOLS[curr]})
+                            </option>
+                        ))}
+                    </SelectControl>
                 </div>
             </div>
 
             {/* Backup & Restore Data */}
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm transition-colors space-y-4">
+            <div className="ui-panel space-y-4">
             <div>
-                <h3 className="font-semibold text-lg text-slate-800 dark:text-white">
+                <h3 className="font-semibold text-lg text-primary">
                 Data Backup & Restore
                 </h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Download all account transactions, subscriptions, budget inputs and currency preference as JSON. Amounts are exported in USD. Downloaded files contain unencrypted financial data; store them privately. Import preview checks a version 1 USD backup without changing your account. Replacing or resetting account data requires a fresh preview, password and explicit confirmation. Legacy migration remains unavailable; existing browser data is left untouched.
+                <p className="text-sm leading-6 text-secondary mt-1">
+                Download all account transactions, subscriptions, budget inputs and currency preference as JSON. Amounts are exported in USD.
+                </p>
+                <p className="mt-2 text-xs leading-5 text-secondary">Downloaded files contain unencrypted financial data; store them privately.</p>
+                <p className="mt-2 text-sm leading-6 text-secondary">Import preview checks a version 1 USD backup without changing your account. Replacing or resetting account data requires a fresh preview, password and explicit confirmation.</p>
+                <p className="mt-2 text-xs leading-5 text-secondary">Legacy migration remains unavailable; existing browser data is left untouched.
                 </p>
             </div>
 
@@ -194,7 +186,7 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
                             disabled={exporting}
                             aria-busy={exporting}
                             onClick={handleExport}
-                            className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-xl transition-colors cursor-pointer disabled:opacity-60"
+                            className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-secondary bg-muted hover:bg-hover dark:hover:bg-hover rounded-control transition-colors cursor-pointer disabled:opacity-60"
                             >
                             <Download size={18} aria-hidden="true" />
                             {exporting ? 'Preparing export…' : 'Export Backup'}
@@ -204,7 +196,7 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
                             <button
                                 type="button"
                                 onClick={cancelExport}
-                                className="px-4 py-2.5 text-sm font-bold text-slate-600 dark:text-slate-300 rounded-xl focus-visible:ring-2 focus-visible:ring-blue-500"
+                                className="px-4 py-2.5 text-sm font-medium text-secondary rounded-control focus-visible:ring-2 focus-visible:ring-accent"
                             >
                                 Cancel export
                             </button>
@@ -212,7 +204,7 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
                         <button
                             type="button"
                             onClick={() => fileInput.current?.click()}
-                            className="flex items-center gap-2 px-4 py-2.5 text-sm font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded-xl transition-colors cursor-pointer"
+                            className="flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-secondary bg-muted hover:bg-hover dark:hover:bg-hover rounded-control transition-colors cursor-pointer"
                         >
                             <Upload size={18} aria-hidden="true" />
                             Import Backup
@@ -226,25 +218,25 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
                             hidden
                         />
                         {previewing && (
-                            <button type="button" onClick={cancelPreview} className="px-4 py-2.5 text-sm text-slate-600 dark:text-slate-300">
+                            <button type="button" onClick={cancelPreview} className="px-4 py-2.5 text-sm text-secondary">
                                 Cancel preview
                             </button>
                         )}
 
                     </div>
-                    {exporting && <p role="status" className="text-sm text-slate-500 dark:text-slate-400">Preparing your account export…</p>}
+                    {exporting && <p role="status" className="text-sm text-secondary">Preparing your account export…</p>}
                     {exportError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{exportError}</p>}
-                    {exportMessage && <p role="status" className="text-sm text-slate-600 dark:text-slate-300">{exportMessage}</p>}
+                    {exportMessage && <p role="status" className="text-sm text-secondary">{exportMessage}</p>}
                 </div>
 
-                <section aria-label="Import preview" className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 space-y-4">
-                    <h3 className="font-semibold text-lg text-slate-800 dark:text-white">Import preview</h3>
-                    <p className="text-sm text-slate-600 dark:text-slate-300">Previewing writes no account data. Select a JSON backup up to 5 MiB using Import Backup. Importing requires a separate confirmation.</p>
+                <section aria-label="Import preview" className="ui-panel space-y-4">
+                    <h3 className="font-semibold text-lg text-primary">Import preview</h3>
+                    <p className="text-sm text-secondary">Previewing writes no account data. Select a JSON backup up to 5 MiB using Import Backup. Importing requires a separate confirmation.</p>
                     <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">REPLACE removes your existing account data and creates the file’s data. Review the impact before opening the separate confirmation dialog.</p>
-                    {previewing && <p role="status" className="text-sm text-slate-500 dark:text-slate-400">Validating backup and calculating replacement impact…</p>}
+                    {previewing && <p role="status" className="text-sm text-secondary">Validating backup and calculating replacement impact…</p>}
                     {previewError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{previewError}</p>}
                     {preview && (
-                        <div className="space-y-4 text-sm text-slate-700 dark:text-slate-300">
+                        <div className="space-y-4 text-sm text-secondary">
                             <p role="status">Valid version {preview.source.schema_version} {preview.source.base_currency} backup. No account data was changed.</p>
                             <p>Backup exported at: {preview.source.exported_at}</p>
                             <div className="overflow-x-auto">
@@ -261,7 +253,7 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
                                     </thead>
                                     <tbody>
                                         {previewResources.map(({ key, label }) => (
-                                            <tr key={key} className="border-t border-slate-100 dark:border-slate-700">
+                                            <tr key={key} className="border-t border-subtle">
                                                 <th scope="row" className="py-2 font-medium">{label}</th>
                                                 <td>{preview.source.counts[key]}</td>
                                                 <td>{preview.current.counts[key]}</td>
@@ -284,7 +276,7 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
                                 ))}
                             </ul>
                             <p className="break-all">File SHA-256 digest: <code>{preview.document_sha256}</code></p>
-                            <p className="text-xs text-slate-500">This digest identifies the file only. It does not authorize an import.</p>
+                            <p className="text-xs text-secondary">This digest identifies the file only. It does not authorize an import.</p>
                         </div>
                     )}
                     <button
@@ -293,16 +285,16 @@ function SettingsPage({ isDarkMode, toggleTheme }: SettingsPageProps) {
                         onClick={() => {
                             if (preview && Date.parse(preview.expires_at) > Date.now() && selectedPreviewFile) setConfirmationKind('import_replace');
                         }}
-                        className="px-4 py-2 rounded-xl bg-red-600 text-white disabled:opacity-50"
+                        className="px-4 py-2 rounded-control bg-red-600 text-white disabled:opacity-50 font-semibold"
                     >
                         Review import confirmation
                     </button>
                 </section>
 
-                <section className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-red-200 dark:border-red-900/30 space-y-3">
-                    <h3 className="font-semibold text-lg text-slate-800 dark:text-white">Reset financial data</h3>
-                    <p className="text-sm text-slate-500 dark:text-slate-400">Reset deletes transactions, subscriptions, budget inputs and the currency preference. Your login account is kept. Review a fresh preview before confirming.</p>
-                    <button type="button" onClick={() => setConfirmationKind('reset')} className="px-4 py-2.5 rounded-xl bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 font-bold">Review account reset</button>
+                <section className="ui-panel border-red-200 dark:border-red-900/30 space-y-3">
+                    <h3 className="font-semibold text-lg text-primary">Reset financial data</h3>
+                    <p className="text-sm text-secondary">Reset deletes transactions, subscriptions, budget inputs and the currency preference. Your login account is kept. Review a fresh preview before confirming.</p>
+                    <button type="button" onClick={() => setConfirmationKind('reset')} className="px-4 py-2.5 rounded-control bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 font-medium">Review account reset</button>
                 </section>
                 {confirmationKind && (
                     <DataConfirmationDialog

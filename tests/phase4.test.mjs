@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import ts from 'typescript';
+import { readRateCache, parseRateResponse, rateIsFresh, RATE_REFRESH_MS } from '../src/utils/exchangeRates.ts';
 import { units, signedUnits, decimal, normalizeMoneyInput, toUSD, fromUSD } from '../src/utils/money.ts';
 
 async function moduleFrom(path, replace = value => value) {
@@ -133,10 +134,11 @@ test('shared preferences ignore stale GETs, serialize saves and retain currency 
   let cursor = 0;
   const savedStorage = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
-    getItem: key => { reads.push(key); return key === 'finance_app_rates_updated_at' ? String(Date.now()) : null; },
+    getItem: key => { reads.push(key); return key === 'finance_app_exchange_rates' ? JSON.stringify({rates:{USD:'1',EUR:'0.92',KZT:'475',RUB:'88'},publishedAt:Date.now(),fetchedAt:Date.now()}) : null; },
     setItem: () => { throw new Error('No financial localStorage writes expected'); },
   } });
   globalThis.__phase4Provider = {
+    readRateCache, parseRateResponse, rateIsFresh, RATE_REFRESH_MS,
     useState: initial => { const index = cursor++; if (!(index in slots)) slots[index] = typeof initial === 'function' ? initial() : initial; return [slots[index], value => { slots[index] = typeof value === 'function' ? value(slots[index]) : value; }]; },
     useRef: initial => { const index = cursor++; if (!(index in slots)) slots[index] = { current: initial }; return slots[index]; },
     useCallback: callback => { cursor++; return callback; },
@@ -151,9 +153,10 @@ test('shared preferences ignore stale GETs, serialize saves and retain currency 
     request: (path, options) => new Promise((resolve, reject) => requests.push({ path, options, resolve, reject })),
   };
   const source = (await readFile(new URL('../src/state/FinanceProvider.tsx', import.meta.url), 'utf8'))
-    .replace(/import \{ useCallback, useEffect, useRef, useState, useSyncExternalStore \} from 'react';/, 'const {useCallback,useEffect,useRef,useState,request}=globalThis.__phase4Provider; const __createElement=(_tag,props)=>props.value;')
+    .replace(/import \{ useCallback, useEffect, useRef, useState, useSyncExternalStore \} from 'react';/, 'const {useCallback,useEffect,useRef,useState,request,readRateCache,parseRateResponse,rateIsFresh,RATE_REFRESH_MS}=globalThis.__phase4Provider; const __createElement=(_tag,props)=>props.value;')
     .replace(/import \{ request \} from '..\/api\/client';/, '')
     .replace(/import \{ FinanceContext \} from '.\/financeStore';/, 'const FinanceContext={Provider:null};')
+    .replace(/^import .*from '..\/utils\/exchangeRates';$/gm, '')
     .replace(/^import .*from '.\/(?:authStore)';$/gm, '')
     .replace(/^import .*from '..\/(?:api\/dataOperations|components\/DataConfirmationDialog)';$/gm, '');
   const output = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React, jsxFactory: '__createElement' } }).outputText;

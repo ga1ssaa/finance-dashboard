@@ -133,10 +133,10 @@ test('failed server logout keeps local data cleared and blocks account switching
 }));
 
 /** Executes AuthPage render/handlers; does not emulate native browser validation. */
-async function authPage(registering) {
+async function authPage(registering, options = {}) {
   const slots = [];
   let cursor = 0;
-  const calls = [];
+  const calls = [], navigations = [];
   const key = `__authPageHarness${moduleId++}`;
   const hooks = {
     useState: initial => {
@@ -149,9 +149,9 @@ async function authPage(registering) {
       if (!(index in slots)) slots[index] = { current: initial };
       return slots[index];
     },
-    useAuth: () => ({ error: '', register: async (...args) => { calls.push({ method: 'register', args }); }, login: async (...args) => { calls.push({ method: 'login', args }); } }),
-    useNavigate: () => () => {},
-    useLocation: () => ({ state: null }),
+    useAuth: () => ({ error: options.authError || '', register: options.register || (async (...args) => { calls.push({ method: 'register', args }); }), login: options.login || (async (...args) => { calls.push({ method: 'login', args }); }) }),
+    useNavigate: () => (to, settings) => navigations.push({ to, settings }),
+    useLocation: () => ({ state: options.locationState || null }),
     __jsx: (type, props, ...children) => ({ type, props: props || {}, children: children.flat(Infinity).filter(child => child !== false && child != null) }),
   };
   globalThis[key] = hooks;
@@ -159,7 +159,7 @@ async function authPage(registering) {
     let source = await readFile(new URL('../src/pages/AuthPage.tsx', import.meta.url), 'utf8');
     const icons = source.match(/import \{([^}]+)\} from 'lucide-react';/)[1].split(',').map(name => name.trim());
     source = source.replace(/^import .*$/gm, '');
-    source = `const {useState,useRef,useAuth,useNavigate,useLocation,__jsx}=globalThis.${key};\n${icons.map(name => `const ${name}=${JSON.stringify(name)};`).join('\n')}\n${source}`;
+    source = `const AveroBrand='brand'; const useTheme=()=>{};\nconst {useState,useRef,useAuth,useNavigate,useLocation,__jsx}=globalThis.${key};\n${icons.map(name => `const ${name}=${JSON.stringify(name)};`).join('\n')}\n${source}`;
     const code = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, jsx: ts.JsxEmit.React, jsxFactory: '__jsx' } }).outputText;
     const { default: Page } = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
     const render = () => { cursor = 0; return Page({ registering }); };
@@ -180,7 +180,7 @@ async function authPage(registering) {
       return found[0];
     };
     return {
-      calls, nodes, find,
+      calls, navigations, nodes, find,
       input: label => find('input', props => props['aria-label'] === label),
       button: name => find('button', props => props['aria-label'] === name),
       change: (label, value) => find('input', props => props['aria-label'] === label).props.onChange({ target: { value } }),
@@ -286,3 +286,39 @@ for (const [name, short, valid] of [['ASCII', '1234567', '12345678'], ['Unicode 
     assert.deepEqual(page.calls, [{ method: 'register', args: ['synthetic@example.test', valid] }]);
   });
 }
+
+
+test('auth form switching preserves the original redirect state in both directions', async () => {
+  const locationState = { from: '/transactions?type=income' };
+  for (const registering of [false, true]) {
+    const page = await authPage(registering, { locationState });
+    const label = registering ? 'Sign in' : 'Create an account';
+    const button = page.nodes().find(node => node.type === 'button' && node.children.includes(label));
+    button.props.onClick();
+    assert.deepEqual(page.navigations, [{ to: registering ? '/login' : '/register', settings: { state: locationState } }]);
+  }
+});
+
+test('auth failures remain visible and preserve form input after the layout redesign', async () => {
+  const page = await authPage(false, { login: async () => { throw new Error('Synthetic sign-in error'); } });
+  page.change('Email address', 'synthetic@example.test'); page.change('Password', 'synthetic-password');
+  await page.submit();
+  assert.ok(page.nodes().some(node => node.props.role === 'alert' && node.children.includes('Synthetic sign-in error')));
+  assert.equal(page.input('Email address').props.value, 'synthetic@example.test');
+  assert.equal(page.input('Password').props.value, 'synthetic-password');
+  const restored = await authPage(false, { authError: 'Synthetic session error' });
+  assert.ok(restored.nodes().some(node => node.props.role === 'alert' && node.children.includes('Synthetic session error')));
+});
+
+test('pending authentication disables submission and page switching, then clears passwords only on success', async () => {
+  const pending = deferred();
+  const page = await authPage(true, { register: () => pending.promise });
+  page.change('Email address', 'synthetic@example.test'); page.change('Password', 'synthetic-password'); page.change('Confirm password', 'synthetic-password');
+  const saving = page.submit();
+  assert.equal(page.find('button', props => props.type === 'submit').props.disabled, true);
+  assert.equal(page.nodes().find(node => node.type === 'button' && node.children.includes('Sign in')).props.disabled, true);
+  assert.equal(page.input('Password').props.value, 'synthetic-password');
+  pending.resolve(userA); await saving;
+  assert.equal(page.input('Password').props.value, ''); assert.equal(page.input('Confirm password').props.value, '');
+  assert.equal(page.find('button', props => props.type === 'submit').props.disabled, false);
+});

@@ -155,9 +155,14 @@ test('two import file reads completing together reserve only one operation key',
  const bytes=deferred();const value=await importCommand();const pendingHTTP=deferred();const api=await operations(()=>pendingHTTP.promise);
  const file={size:1,arrayBuffer:()=>bytes.promise};
  const first=api.dispatchDataOperation({...value.input,file});const second=api.dispatchDataOperation({...value.input,file,key:keyB});
- const secondRejected=assert.rejects(second,error=>error.code==='OPERATION_PENDING');
- bytes.resolve(new TextEncoder().encode(value.document).buffer);await tick();await secondRejected;
- assert.equal(api.calls.length,1);pendingHTTP.resolve(Response.json(receipt({kind:'import_replace',sha:value.sha})));assert.equal(await first,'completed');
+ // Independent async digests may finish in either order; the invariant is one reservation/write.
+ const results=[first,second].map(promise=>promise.then(value=>({status:'fulfilled',value}),error=>({status:'rejected',error})));
+ bytes.resolve(new TextEncoder().encode(value.document).buffer);
+ const rejected=await Promise.race(results);assert.equal(rejected.status,'rejected');assert.equal(rejected.error.code,'OPERATION_PENDING');
+ assert.equal(api.calls.length,1);
+ const winningKey=new Headers(api.calls[0][1].headers).get('Idempotency-Key');assert.ok([keyA,keyB].includes(winningKey));
+ pendingHTTP.resolve(Response.json(receipt({key:winningKey,kind:'import_replace',sha:value.sha})));
+ const settled=await Promise.all(results);assert.equal(settled.filter(result=>result.status==='fulfilled'&&result.value==='completed').length,1);assert.equal(settled.filter(result=>result.status==='rejected'&&result.error.code==='OPERATION_PENDING').length,1);assert.equal(api.calls.length,1);
 });
 
 async function dialogHarness(){

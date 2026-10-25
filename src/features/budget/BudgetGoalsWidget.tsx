@@ -27,7 +27,7 @@ function BudgetGoalsWidget({monthlyIncome, spentData}: BudgetGoalsWidgetProps){
             icon: <Home size={18}/>,
             limit: monthlyIncome * 0.50,
             spent: needsSpent,
-            baseColor: "bg-blue-500 dark:bg-blue-400",
+            baseColor: "bg-accent",
         },
         {
             id: "wants",
@@ -36,7 +36,7 @@ function BudgetGoalsWidget({monthlyIncome, spentData}: BudgetGoalsWidgetProps){
             icon: <Coffee size={18}/>,
             limit: monthlyIncome * 0.30,
             spent: wantsSpent,
-            baseColor: "bg-indigo-500 dark:bg-indigo-400",
+            baseColor: "bg-accent",
         },
         {
             id: "savings",
@@ -50,22 +50,22 @@ function BudgetGoalsWidget({monthlyIncome, spentData}: BudgetGoalsWidgetProps){
     ];
 
     return (
-        <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm transition-colors duration-200">
+        <div className="ui-panel">
             {/* Widget Header */}
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center justify-between mb-5">
                 <div>
-                    <h3 className="font-semibold text-lg text-slate-800 dark:text-white flex items-center gap-2 transition-colors">
-                        <Target size={20} className="text-blue-500" />
+                    <h3 className="font-semibold text-lg text-primary flex items-center gap-2 transition-colors">
+                        <Target size={20} className="text-accent" />
                         Budget and Goals (50/30/20)
                     </h3>
-                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                    <p className="text-sm text-secondary mt-1">
                         Based on your {formatAmount(monthlyIncome)} monthly income
                     </p>
                 </div>
             </div>
 
             {/* Categories Progress Bars */}
-            <div className="space-y-6">
+            <div className="space-y-5">
                 {categories.map((person) => {
                     // Calculate percentages
                     const rawPercent = person.limit > 0 ? (person.spent / person.limit) * 100 : 0;
@@ -87,40 +87,40 @@ function BudgetGoalsWidget({monthlyIncome, spentData}: BudgetGoalsWidgetProps){
                     return (
                         <div key={person.id} className="space-y-2">
                             {/* Category Header */}
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <div className="p-2 bg-slate-100 dark:bg-slate-700 rounded-lg text-slate-600 dark:text-slate-300">
+                            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                                <div className="flex min-w-0 items-center gap-3">
+                                    <div className="shrink-0 p-2 bg-muted rounded-control text-secondary">
                                         {person.icon}
                                     </div>
                                     <div>
-                                        <p className="font-medium text-slate-800 dark:text-white flex items-center gap-2">
+                                        <p className="font-medium text-primary flex items-center gap-2">
                                             {person.label}
                                             {isDanger && <AlertTriangle size={14} className="text-red-500" />}
                                         </p>
-                                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                                        <p className="text-xs text-secondary">
                                             {person.description}
                                         </p>
                                     </div>
                                 </div>
 
                                 {/* Amount Spent vs Limit */}
-                                <div className="text-right">
-                                    <p className={`font-bold ${isDanger ? "text-red-500" : "text-slate-800 dark:text-white"}`}>
+                                <div className="min-w-0 text-right [overflow-wrap:anywhere]">
+                                    <p className={`font-semibold ${isDanger ? "text-red-500" : "text-primary"}`}>
                                         {formatAmount(person.spent)}{" "}
-                                        <span className="text-slate-400 dark:text-slate-500 text-sm font-normal">
+                                        <span className="text-secondary text-sm font-normal">
                                             / {formatAmount(person.limit)}
                                         </span>
                                     </p>
-                                    <p className={`text-xs ${isDanger ? "text-red-500 font-semibold" : isWarning ? "text-amber-500 font-semibold" : "text-slate-500 dark:text-slate-400"}`}>
+                                    <p className={`text-xs ${isDanger ? "text-red-500 font-semibold" : isWarning ? "text-amber-500 font-semibold" : "text-secondary"}`}>
                                         {rawPercent.toFixed(1)}% used
                                     </p>
                                 </div>
                             </div>
 
                             {/* Progress Bar Track */}
-                            <div className="w-full bg-slate-100 dark:bg-slate-700/50 rounded-full h-3 overflow-hidden">
+                            <div className="w-full bg-muted dark:bg-muted/50 rounded-control h-1.5 overflow-hidden">
                                 <div
-                                    className={`h-full rounded-full transition-all duration-500 ease-out ${barColor}`}
+                                    className={`h-full rounded-control ${barColor}`}
                                     style={{ width: `${displayPercent}%` }}
                                 />
                             </div>

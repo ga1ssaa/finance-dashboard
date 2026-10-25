@@ -19,7 +19,7 @@ const resources: { key: keyof ResourceCounts; label: string }[] = [
     { key: 'budget_profiles', label: 'Budget profile' },
     { key: 'preferences', label: 'Currency preference' },
 ];
-const inputClass = 'w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-900 p-2 text-slate-800 dark:text-white';
+const inputClass = 'w-full rounded-lg border border-control bg-surface dark:bg-canvas p-2 text-primary dark:text-primary';
 
 export function DataConfirmationDialog({ kind, initialPreview, initialFile, recovery, onClose }: Props) {
     const [authorization, setAuthorization] = useState<ImportPreview | ResetPreview | null>(initialPreview || null);
@@ -142,31 +142,31 @@ export function DataConfirmationDialog({ kind, initialPreview, initialFile, reco
             ref={dialog}
             aria-labelledby="data-confirmation-title"
             onCancel={event => { event.preventDefault(); close(); }}
-            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-2xl bg-white dark:bg-slate-800 p-6 backdrop:bg-slate-900/60"
+            className="w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-modal bg-surface p-6 backdrop:bg-ink/60"
         >
             <section className="space-y-4">
-                <h2 id="data-confirmation-title" className="font-serif text-xl font-bold text-slate-800 dark:text-white">
+                <h2 id="data-confirmation-title" className="font-sans text-xl font-bold text-primary">
                     {kind === 'reset' ? 'Confirm account reset' : 'Confirm account replacement'}
                 </h2>
                 <p className="text-sm text-red-700 dark:text-red-300">
                     {kind === 'reset' ? 'This will delete all financial records and reset your budget and currency preference.' : 'This will replace all financial records, budget inputs and currency preference with the backup.'}
                 </p>
-                <p className="text-sm text-slate-600 dark:text-slate-300">Nothing changes until you explicitly confirm. Your login account and password are kept.</p>
-                <p className="break-all text-sm text-slate-700 dark:text-slate-300">Operation key: <code>{operationKey}</code></p>
+                <p className="text-sm text-secondary">Nothing changes until you explicitly confirm. Your login account and password are kept.</p>
+                <p className="break-all text-sm text-secondary">Operation key: <code>{operationKey}</code></p>
                 <p className="text-sm font-semibold text-amber-700 dark:text-amber-300">Do not reload or close this tab after confirming. Recovery information is held only in memory and is lost on a full reload.</p>
                 {recovery && <p className="text-sm text-amber-700 dark:text-amber-300">This retries the same unresolved operation key. Use the same original backup; a failed retry does not prove the earlier request failed.</p>}
                 {kind === 'reset' ? (
-                    <button type="button" disabled={working} onClick={() => { void loadPreview(); }} className="px-4 py-2 rounded-lg border dark:border-slate-600 text-slate-700 dark:text-slate-200">Request fresh reset preview</button>
+                    <button type="button" disabled={working} onClick={() => { void loadPreview(); }} className="px-4 py-2 rounded-control border dark:border-control text-secondary">Request fresh reset preview</button>
                 ) : (!authorization && !working) && (
-                    <label className="block text-sm text-slate-700 dark:text-slate-300">
+                    <label className="block text-sm text-secondary">
                         {recovery ? 'Select the same original JSON backup' : 'Select JSON backup for a fresh preview'}
                         <input type="file" accept=".json,application/json" onChange={event => { const selected = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (selected) void loadPreview(selected); }} className="block mt-2" />
                     </label>
                 )}
-                {working && <p role="status" className="text-sm text-slate-600 dark:text-slate-300">Preparing or submitting your operation…</p>}
+                {working && <p role="status" className="text-sm text-secondary">Preparing or submitting your operation…</p>}
                 {error && <p role="alert" className="text-sm text-red-600 dark:text-red-300">{error}</p>}
                 {authorization && (
-                    <div className="space-y-3 text-sm text-slate-700 dark:text-slate-300">
+                    <div className="space-y-3 text-sm text-secondary">
                         <p>Preview expires: {authorization.expires_at}</p>
                         <div className="overflow-x-auto">
                             <table className="w-full text-left">
@@ -180,15 +180,15 @@ export function DataConfirmationDialog({ kind, initialPreview, initialFile, reco
                     </div>
                 )}
                 <form onSubmit={submit} className="space-y-4">
-                    <label className="block text-sm text-slate-700 dark:text-slate-300">Current password
+                    <label className="block text-sm text-secondary">Current password
                         <input type="password" autoComplete="current-password" required disabled={!authorization || working} value={password} onChange={event => setPassword(event.target.value)} className={inputClass} />
                     </label>
-                    <label className="block text-sm text-slate-700 dark:text-slate-300">Type {requiredPhrase}
+                    <label className="block text-sm text-secondary">Type {requiredPhrase}
                         <input type="text" autoComplete="off" required disabled={!authorization || working} value={confirmation} onChange={event => setConfirmation(event.target.value)} className={inputClass} />
                     </label>
                     <div className="flex justify-end gap-3">
-                        <button type="button" onClick={close} className="px-4 py-2 text-slate-700 dark:text-slate-200">Cancel before confirmation</button>
-                        <button type="submit" disabled={!authorization || working || !password || confirmation !== requiredPhrase} className="rounded-lg bg-red-600 px-4 py-2 text-white disabled:opacity-50">
+                        <button type="button" onClick={close} className="px-4 py-2 text-secondary">Cancel before confirmation</button>
+                        <button type="submit" disabled={!authorization || working || !password || confirmation !== requiredPhrase} className="rounded-control bg-red-600 px-4 py-2 text-white disabled:opacity-50 font-semibold">
                             {recovery ? 'Retry this same operation' : kind === 'reset' ? 'Reset my financial data' : 'Replace my financial data'}
                         </button>
                     </div>
@@ -221,18 +221,18 @@ export function DataOperationGate({ operation }: { operation: PendingDataOperati
         }
     };
     return (
-        <main className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-6">
-            <section className="max-w-xl rounded-2xl bg-white dark:bg-slate-800 border border-amber-200 p-6 space-y-4">
-                <h1 className="font-serif text-2xl font-bold text-slate-800 dark:text-white">Account data operation unresolved</h1>
-                <p className="text-slate-600 dark:text-slate-300">Financial pages and new writes are paused until a matching completion receipt is confirmed. A missing receipt does not mean failure.</p>
-                <p className="break-all text-sm text-slate-700 dark:text-slate-300">Operation key: <code>{operation.key}</code></p>
+        <main className="min-h-screen bg-canvas flex items-center justify-center p-6">
+            <section className="max-w-xl rounded-modal bg-surface border border-amber-200 p-6 space-y-4">
+                <h1 className="font-sans text-2xl font-bold text-primary">Account data operation unresolved</h1>
+                <p className="text-secondary">Financial pages and new writes are paused until a matching completion receipt is confirmed. A missing receipt does not mean failure.</p>
+                <p className="break-all text-sm text-secondary">Operation key: <code>{operation.key}</code></p>
                 <p className="text-sm text-amber-700 dark:text-amber-300">Do not reload or close this tab. This recovery key is kept only in memory. Canceling a request cannot undo a server operation.</p>
-                {message && <p role="status" className="text-sm text-slate-700 dark:text-slate-300">{message}</p>}
+                {message && <p role="status" className="text-sm text-secondary">{message}</p>}
                 <div className="flex flex-wrap gap-3">
-                    <button type="button" disabled={checking} onClick={() => { void check(); }} className="rounded-lg bg-blue-600 px-4 py-2 text-white">{checking ? 'Checking status…' : 'Check operation status'}</button>
-                    {operation.status === 'unknown' && <button type="button" onClick={() => setRecovering(true)} className="rounded-lg border px-4 py-2 text-slate-700 dark:text-slate-200">Prepare same-key recovery</button>}
+                    <button type="button" disabled={checking} onClick={() => { void check(); }} className="rounded-control bg-accent px-4 py-2 text-accent-ink font-semibold">{checking ? 'Checking status…' : 'Check operation status'}</button>
+                    {operation.status === 'unknown' && <button type="button" onClick={() => setRecovering(true)} className="rounded-control border px-4 py-2 text-secondary">Prepare same-key recovery</button>}
                 </div>
-                <button type="button" onClick={() => { void logout().catch(() => {}); }} className="text-sm underline text-slate-600 dark:text-slate-300">Sign out — keep the recovery key in this tab</button>
+                <button type="button" onClick={() => { void logout().catch(() => {}); }} className="text-sm underline text-secondary">Sign out — keep the recovery key in this tab</button>
                 {recovering && <DataConfirmationDialog kind={operation.kind} recovery={operation} onClose={() => setRecovering(false)} />}
             </section>
         </main>

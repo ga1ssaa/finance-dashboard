@@ -1,68 +1,22 @@
-import { ArrowDownRight, ArrowUpRight, DollarSign } from "lucide-react"
-import type { DashboardRecord } from "../../api/client"
-import { useSettings } from "../../hooks/useSettings";
+import type { DashboardRecord } from '../../api/client';
+import { useSettings } from '../../hooks/useSettings';
 
-interface SummaryCardsProps { summary: DashboardRecord }
-function SummaryCards({summary}: SummaryCardsProps){
-    const {formatAmount} = useSettings();
-    const totalIncome = summary.income_usd;
-    const totalExpense = summary.expenses_usd;
-    const balance = summary.balance_usd;
-
-    return(
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            {/* 1st Card: Total Balance  */}
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm transition-colors duration-200">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <p className="font-serif text-sm font-medium text-slate-500 dark:text-slate-400 mb-1 transition-colors">
-                            Total Balance
-                        </p>
-                        <h3 className="text-2xl font-bold text-slate-800 dark:text-white transition-colors">
-                            {formatAmount(balance)}
-                        </h3>
-                    </div>
-                    <div className="w-12 h-12 bg-blue-50 dark:bg-blue-900/40 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400 transition-colors">
-                        <DollarSign size={24}/>
-                    </div>
-                </div>
+export default function SummaryCards({ summary }: { summary: DashboardRecord }) {
+    const { formatAmount } = useSettings();
+    return (
+        <dl className="grid min-w-0 gap-6 rounded-card border border-subtle bg-surface p-5 sm:p-6 md:grid-cols-[1.4fr_1fr_1fr]">
+            <div className="min-w-0 border-b border-subtle pb-5 md:border-b-0 md:border-r md:pb-0 md:pr-6">
+                <dt className="text-sm font-medium text-secondary">Total Balance</dt>
+                <dd className="mt-2"><span className="block text-[clamp(2rem,4vw,2.75rem)] font-bold leading-tight tracking-tight text-primary [overflow-wrap:anywhere]">{formatAmount(summary.balance_usd)}</span><span className="mt-2 block text-xs text-secondary">From recorded transactions in this period</span></dd>
             </div>
-
-            {/* 2nd Card: Income */}
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm transition-colors duration-200">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <p className="font-serif text-sm font-medium text-slate-500 dark:text-slate-400 mb-1 transition-colors">
-                            Total Income 
-                        </p>
-                        <h3 className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 transition-colors">
-                            {formatAmount(totalIncome)}
-                        </h3>
-                    </div>
-                    <div className="w-12 h-12 bg-emerald-50 dark:bg-emerald-900/40 rounded-full flex items-center justify-center text-emerald-600 dark:text-emerald-400 transition-colors">
-                        <ArrowUpRight size={24}/>
-                    </div>
-                </div>
+            <div className="min-w-0 self-center">
+                <dt className="text-sm font-medium text-secondary">Total Income</dt>
+                <dd className="mt-2 text-2xl font-semibold text-accent [overflow-wrap:anywhere]">{formatAmount(summary.income_usd)}</dd>
             </div>
-
-            {/* 3rd Card: Expense */}
-            <div className="bg-white dark:bg-slate-800 rounded-xl p-6 border border-slate-200 dark:border-slate-700 shadow-sm transition-colors duration-200">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <p className="font-serif text-sm font-medium text-slate-500 dark:text-slate-400 mb-1 transition-colors">
-                            Total Expense
-                        </p>
-                        <h3 className="text-2xl font-bold text-rose-600 dark:text-rose-400 transition-colors">
-                            {formatAmount(totalExpense)}
-                        </h3>
-                    </div>
-                    <div className="w-12 h-12 bg-rose-50 dark:bg-rose-900/40 rounded-full flex items-center justify-center text-rose-600 dark:text-rose-400 transition-colors">
-                        <ArrowDownRight size={24}/>
-                    </div>
-                </div>
+            <div className="min-w-0 self-center">
+                <dt className="text-sm font-medium text-secondary">Total Expenses</dt>
+                <dd className="mt-2 text-2xl font-semibold text-primary [overflow-wrap:anywhere]">{formatAmount(summary.expenses_usd)}</dd>
             </div>
-        </div>
+        </dl>
     );
-
 }
-export default SummaryCards

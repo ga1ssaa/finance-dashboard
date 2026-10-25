@@ -8,15 +8,15 @@ export default function AuthenticatedApp() {
     const auth = useAuth();
     const location = useLocation();
     if (auth.status === 'loading' || auth.status === 'signing-out') {
-        return <main className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center"><p role="status" className="text-slate-600 dark:text-slate-300">{auth.status === 'loading' ? 'Restoring your session…' : 'Signing out…'}</p></main>;
+        return <main className="min-h-screen bg-canvas flex items-center justify-center"><p role="status" className="text-secondary">{auth.status === 'loading' ? 'Restoring your session…' : 'Signing out…'}</p></main>;
     }
     if (auth.status === 'error' || auth.status === 'logout-error') {
         return (
-            <main className="min-h-screen bg-slate-50 dark:bg-slate-900 flex items-center justify-center p-6">
-                <div className="max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-8 space-y-4">
-                    <h1 className="font-serif text-2xl font-bold text-slate-800 dark:text-white">{auth.status === 'logout-error' ? 'Sign-out needs a retry' : 'Unable to restore your session'}</h1>
-                    <p role="alert" className="text-slate-600 dark:text-slate-300">{auth.error}</p>
-                    <button onClick={auth.status === 'logout-error' ? () => { void auth.logout().catch(() => {}); } : auth.retry} className="rounded-xl bg-blue-600 px-4 py-2 text-white font-bold">Retry</button>
+            <main className="min-h-screen bg-canvas flex items-center justify-center p-6">
+                <div className="max-w-md rounded-modal border border-subtle bg-surface p-8 space-y-4">
+                    <h1 className="font-sans text-2xl font-bold text-primary">{auth.status === 'logout-error' ? 'Sign-out needs a retry' : 'Unable to restore your session'}</h1>
+                    <p role="alert" className="text-secondary">{auth.error}</p>
+                    <button onClick={auth.status === 'logout-error' ? () => { void auth.logout().catch(() => {}); } : auth.retry} className="rounded-control bg-accent px-4 py-2 text-accent-ink font-semibold">Retry</button>
                 </div>
             </main>
         );

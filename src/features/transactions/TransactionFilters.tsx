@@ -1,3 +1,4 @@
+import SelectControl from "../../components/SelectControl";
 import { Filter, ArrowUpDown } from "lucide-react";
 
 export type FilterType = 'all' | 'income' | 'expense';
@@ -13,32 +14,29 @@ interface TransactionFiltersProps {
 function TransactionFilters({ filterType, setFilterType, sortBy, setSortBy}: TransactionFiltersProps) {
     return (
         <div className="flex flex-wrap items-center gap-2 justify-start md:justify-end">
-            <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs transition-colors">
-                <Filter size={14} className="text-slate-400 dark:text-slate-500" />
-                <select
+                <SelectControl
+                    leadingIcon={<Filter size={16} />}
+                    aria-label="Transaction type"
                     value={filterType}
                     onChange={(e) => setFilterType(e.target.value as FilterType)}
-                    className="bg-transparent focus:outline-none text-slate-700 dark:text-slate-300 font-medium cursor-pointer max-w-[110px] md:max-w-none"
+                    className="border-subtle bg-canvas text-xs text-secondary font-medium cursor-pointer focus:outline-none"
                 >
-                    <option value="all" className="dark:bg-slate-800">All</option>
-                    <option value="income" className="dark:bg-slate-800">Income</option>
-                    <option value="expense" className="dark:bg-slate-800">Expense</option>
-                </select>
-            </div>
-
-            <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-xs transition-colors">
-                <ArrowUpDown size={14} className="text-slate-400 dark:text-slate-500" />
-                <select
+                    <option value="all" className="dark:bg-surface">All</option>
+                    <option value="income" className="dark:bg-surface">Income</option>
+                    <option value="expense" className="dark:bg-surface">Expense</option>
+                </SelectControl>
+                <SelectControl
+                    leadingIcon={<ArrowUpDown size={16} />}
+                    aria-label="Sort transactions"
                     value={sortBy}
                     onChange={(e) => setSortBy(e.target.value as SortType)}
-                    className="bg-transparent focus:outline-none text-slate-700 dark:text-slate-300 font-medium cursor-pointer"
+                    className="border-subtle bg-canvas text-xs text-secondary font-medium cursor-pointer focus:outline-none"
                 >
-                    <option value="date-desc" className="dark:bg-slate-800">Newest First</option>
-                    <option value="date-asc" className="dark:bg-slate-800">Oldest First</option>
-                    <option value="amount-desc" className="dark:bg-slate-800">Highest Amount</option>
-                    <option value="amount-asc" className="dark:bg-slate-800">Lowest Amount</option>
-                </select>
-            </div>
+                    <option value="date-desc" className="dark:bg-surface">Newest First</option>
+                    <option value="date-asc" className="dark:bg-surface">Oldest First</option>
+                    <option value="amount-desc" className="dark:bg-surface">Highest Amount</option>
+                    <option value="amount-asc" className="dark:bg-surface">Lowest Amount</option>
+                </SelectControl>
         </div>
     );
 }
