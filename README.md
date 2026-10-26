@@ -223,6 +223,86 @@ GitHub:
 https://github.com/ga1ssaa
 ## Local full-stack development
 
+### Isolated Docker Compose stack
+
+Docker Desktop / Docker Engine with Compose v2 or newer is required. From the
+repository root, generate dedicated secrets once (Python 3, standard library only):
+
+```sh
+python3 docker/init-env.py
+```
+
+The helper exclusively creates ignored `.env.compose.local` with mode `0600` and
+does not print or replace credentials. Variable names are documented in
+`.env.compose.example`. Keep the generated hexadecimal database password: it is
+also embedded in the container-only SQLAlchemy URL. Do not use `backend/.env`.
+
+Start the entire application with one Compose command:
+
+```sh
+docker compose --env-file .env.compose.local up --build -d --wait
+```
+
+Open **http://127.0.0.1:8080** (use this exact host, not `localhost`). Nginx serves
+the production Vite build and proxies `/api/` unchanged to FastAPI. The existing
+frontend requires an absolute loopback API URL; Compose builds it with the same
+browser origin. `AVERO_HTTP_PORT` changes both the published port, build-time API
+URL and allowed auth origin. Rebuild/recreate after changing that port.
+
+Services: `frontend` (Nginx), `backend` (single-worker FastAPI), `postgres`
+(PostgreSQL 17), and the one-shot `migrate` service. PostgreSQL health gates
+migrations; successful migrations gate backend startup; backend readiness gates
+Nginx startup. Only Nginx publishes a host port, bound to `127.0.0.1`.
+
+The dedicated Compose project is **`avero-local`**, its database is
+**`avero_compose`**, and its new persistent volume is
+**`avero-local_postgres_phase8_data`**. No host database URL or existing volume is
+mounted or reused. The migration wrapper rejects other hosts/database names and
+applies the existing Alembic chain through `0004_data_operations` to this isolated
+database. The migration approval boundary below still applies to all existing
+development databases. `backend/compose.yaml` remains the separate development
+database setup. Do not override the Compose project name or run this root stack
+with the backend environment file.
+
+This is a **local HTTP stack**, not a production deployment. It deliberately keeps
+`APP_ENV=development`, existing cookies/CSRF/origin rules, one API worker and
+`--no-proxy-headers`; production mode remains blocked by the application. Behind
+Nginx, the existing IP rate limits are shared across local users. No auth behavior
+or financial contract is changed. Exchange rates still require the existing
+external provider; no rates are fabricated by Compose.
+
+Verify without printing resolved secrets:
+
+```sh
+docker compose --env-file .env.compose.local config --quiet
+python3 docker/test_config.py
+docker compose --env-file .env.compose.local ps -a
+docker compose --env-file .env.compose.local exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT current_database(), 1"'
+docker compose --env-file .env.compose.local exec -T backend alembic current
+python3 docker/smoke.py
+```
+
+The smoke script uses only the isolated loopback frontend, a newly registered
+synthetic account and transactions created by that run. It checks SPA assets,
+proxied API readiness, authentication/CSRF/cookies, exact USD CRUD/aggregates and
+logout revocation. It removes only its own transaction IDs; the synthetic account
+remains. Pass `--port` if `AVERO_HTTP_PORT` differs from 8080. Container build
+contexts use allowlists that exclude host credentials, backups and dependencies.
+Never print `docker compose config` without `--quiet`: resolved output contains
+secrets. Preserve `.env.compose.local` when reusing the persistent volume; changing
+its password does not rotate an initialized database's credentials.
+
+Stop this stack without deleting its persistent volume:
+
+```sh
+docker compose --env-file .env.compose.local stop
+```
+
+Do not use volume deletion or pruning commands. Existing PostgreSQL services,
+`finance_dashboard`, backups and data remain untouched.
+
+### Native development
+
 Financial records, manual budget inputs, and display-currency preferences now use the FastAPI API. Run the backend using [backend/README.md](backend/README.md), then configure and start this frontend:
 
 ```bash

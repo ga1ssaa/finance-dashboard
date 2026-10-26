@@ -1,0 +1,17 @@
+**
+!pyproject.toml
+!app/
+!app/**
+!alembic.ini
+!alembic/
+!alembic/**
+!docker/
+!docker/migrate.py
+**/.env*
+**/*.local
+**/__pycache__/
+**/*.pyc
+**/*.pem
+**/*.key
+**/AGENTS.md
+**/.DS_Store

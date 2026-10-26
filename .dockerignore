@@ -1,0 +1,21 @@
+# Allowlist: private host configuration, dependencies and database tools never enter the context.
+**
+!package.json
+!package-lock.json
+!index.html
+!tsconfig*.json
+!vite.config.ts
+!tailwind.config.js
+!postcss.config.js
+!src/
+!src/**
+!public/
+!public/**
+!docker/
+!docker/nginx.conf
+**/.env*
+**/*.local
+**/*.pem
+**/*.key
+**/AGENTS.md
+**/.DS_Store
