@@ -348,3 +348,46 @@ node --test tests/phase4.test.mjs tests/phase5-auth.test.mjs tests/phase6-export
 ```
 
 `tests/phase4-api.test.mjs` and its fixture describe the earlier unauthenticated integration phase; they are historical and are superseded by the authenticated Phase 5 checks. Do not point a historical fixture at normal development data.
+
+## Continuous integration
+
+[CI](.github/workflows/ci.yml) runs on pushes to `feat/fullstack`, pull requests
+targeting `feat/fullstack` or `main`, and manual dispatch. Four independent jobs
+check the frontend, offline backend tests, Docker configuration/images, and
+dependency security. Actions are pinned to official immutable commit SHAs;
+checkout credentials are not persisted and the token has only `contents: read`.
+
+The frontend uses Node 24, `npm ci`, `node --test tests/*.test.mjs`, ESLint,
+TypeScript and the production build. `RUN_PHASE4_E2E=0` keeps the historical
+database fixture disabled. Backend CI uses Python 3.13, the declared `[dev]`
+dependencies and `python -m pytest -q backend/tests`; `RUN_DATABASE_TESTS=0`
+retains all existing opt-in skips and private-fixture guards. A reserved invalid
+database hostname is set defensively. CI has no PostgreSQL service, private
+environment file, migration execution, backup restore, or database test target.
+The migration unit tests generate SQL offline only.
+
+Docker checks use synthetic interpolation values and `.env.compose.example`.
+Only `config --quiet`, the eight existing configuration tests and image builds
+run; no Compose service is started. The migration image shares the backend
+Dockerfile, so only frontend/backend builds are needed. Node/pip download caches
+are keyed by `package-lock.json`/`backend/pyproject.toml`.
+
+Security scans the npm lockfile without installing/upgrading packages. Python
+requirements are captured from the resolved backend/test environment before the
+pinned `pip-audit` tool is installed. There is currently no Python lockfile, so
+Python resolution can change within the existing declared ranges. The job summary
+lists affected packages, npm severities, Python advisory IDs and available fixes.
+`pip-audit` supplies no severity: Python findings are labeled unrated rather than
+assigned an invented rating. High/critical npm findings and every Python finding
+fail CI; lower npm severities remain reported. Missing, skipped or unavailable
+audit data also fail closed. No advisory exclusions or automatic upgrades are
+configured. Existing dependency findings may therefore make security CI fail
+until a separately reviewed dependency update resolves them.
+
+CI does not publish images, deploy, or use repository/production secrets. Validate
+workflow changes with `actionlint .github/workflows/ci.yml` and run the audit
+report policy tests with:
+
+```sh
+python3 -m unittest discover -s .github/scripts -p 'test_*.py' -q
+```
