@@ -73,7 +73,7 @@ export function sameDecimalAmount(left: string, right: string): boolean {
     } catch { return false; }
 }
 
-/** Shared USD boundary: strict by default; transactions opt into nearest/ties-to-even at 8 places. */
+/** Shared USD boundary: strict by default; monetary forms opt into nearest/ties-to-even at 8 places. */
 export function toUSD(amount: string, rate: string, rounding: 'exact' | 'half-even' = 'exact'): string {
     const ratio = rateRatio(rate);
     if (rounding === 'half-even') {

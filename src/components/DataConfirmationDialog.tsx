@@ -180,12 +180,14 @@ export function DataConfirmationDialog({ kind, initialPreview, initialFile, reco
                     </div>
                 )}
                 <form onSubmit={submit} className="space-y-4">
-                    <label className="block text-sm text-secondary">Current password
-                        <input type="password" autoComplete="current-password" required disabled={!authorization || working} value={password} onChange={event => setPassword(event.target.value)} className={inputClass} />
-                    </label>
-                    <label className="block text-sm text-secondary">Type {requiredPhrase}
-                        <input type="text" autoComplete="off" required disabled={!authorization || working} value={confirmation} onChange={event => setConfirmation(event.target.value)} className={inputClass} />
-                    </label>
+                    <div className={kind === 'import_replace' ? 'space-y-6' : 'space-y-4'}>
+                        <label className={kind === 'import_replace' ? 'flex flex-col gap-2 text-sm text-secondary' : 'block text-sm text-secondary'}>Current password
+                            <input type="password" autoComplete="current-password" required disabled={!authorization || working} value={password} onChange={event => setPassword(event.target.value)} className={inputClass} />
+                        </label>
+                        <label className={kind === 'import_replace' ? 'flex flex-col gap-2 text-sm text-secondary' : 'block text-sm text-secondary'}>Type {requiredPhrase}
+                            <input type="text" autoComplete="off" required disabled={!authorization || working} value={confirmation} onChange={event => setConfirmation(event.target.value)} className={inputClass} />
+                        </label>
+                    </div>
                     <div className="flex justify-end gap-3">
                         <button type="button" onClick={close} className="px-4 py-2 text-secondary">Cancel before confirmation</button>
                         <button type="submit" disabled={!authorization || working || !password || confirmation !== requiredPhrase} className="rounded-control bg-red-600 px-4 py-2 text-white disabled:opacity-50 font-semibold">

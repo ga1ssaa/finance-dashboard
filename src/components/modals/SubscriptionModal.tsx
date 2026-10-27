@@ -1,8 +1,9 @@
 import SelectControl from "../SelectControl";
 import { UnknownWriteOutcomeError } from "../../api/client";
 import { localDate } from "../../utils/dates";
-import { useRef, useState } from "react";
-import { fromUSD, toUSD } from "../../utils/money";
+import { useId, useRef, useState } from "react";
+import { useMoneyDraft } from "../../hooks/useMoneyDraft";
+import AmountInput from "../AmountInput";
 import { X } from "lucide-react";
 import type { Subscription } from "../../types/finance";
 import { useSettings, CURRENCY_SYMBOLS } from "../../hooks/useSettings";
@@ -17,22 +18,18 @@ interface SubscriptionModalProps {
 function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: SubscriptionModalProps){
 
     const settings = useSettings();
-    const [currency] = useState(settings.currency);
-    const [rate] = useState(String(settings.rates[settings.currency]));
+    const draft = useMoneyDraft(settings, initialData ? { amount: initialData.amount } : {}, ['amount']);
+    const fieldId = useId();
+    const amountRef = useRef<HTMLInputElement>(null);
     const [saving, setSaving] = useState(false);
     const [unknownOutcome, setUnknownOutcome] = useState(false);
     const [error, setError] = useState('');
     const submitting = useRef(false);
-    const [amountDirty, setAmountDirty] = useState(false);
+    const [amountInvalid, setAmountInvalid] = useState(false);
 
     // Initialize state directly from initialData (if it exists)
     const [serviceName, setServiceName] = useState(initialData?.serviceName || '');
     
-    const [amount, setAmount] = useState(() => {
-        if (!initialData?.amount) return '';
-        return fromUSD(initialData.amount, rate);
-    });
-
     const [nextPaymentDate, setNextPaymentDate] = useState(
         initialData?.nextPaymentDate || localDate()
     );
@@ -46,9 +43,12 @@ function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: Subscript
         if (submitting.current || unknownOutcome) return;
         submitting.current = true; setSaving(true); setError('');
         try {
-        if (!serviceName.trim() || !amount || !nextPaymentDate) throw new Error('Service name, amount and payment date are required.');
+        if (!serviceName.trim() || !draft.values.amount || !nextPaymentDate) throw new Error('Service name, amount and payment date are required.');
+        let amount: string;
+        try { amount = draft.resolve('amount'); }
+        catch (error) { setAmountInvalid(true); amountRef.current?.focus(); throw error; }
 
-        await onSubmit({serviceName,amount: initialData && !amountDirty ? initialData.amount : toUSD(amount, rate),nextPaymentDate,status});
+        await onSubmit({serviceName,amount,nextPaymentDate,status});
         onClose();
         } catch (error) { setError(error instanceof Error ? error.message : 'Save failed. Please retry.'); if (error instanceof UnknownWriteOutcomeError) { setUnknownOutcome(true); settings.refresh(); } }
         finally { submitting.current = false; setSaving(false); }
@@ -72,13 +72,15 @@ function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: Subscript
 
                     {/* Modal Body / Form */}
                     <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                        {error && <p role="alert" className="text-red-500 text-sm">{error}</p>}
+                        {draft.warning && <p id={`${fieldId}-rate-warning`} role="status" className="text-sm text-secondary">{draft.warning}</p>}
+                        {error && <p id={`${fieldId}-error`} role="alert" className="text-red-500 text-sm">{error}</p>}
                     {unknownOutcome && <button type="button" className="text-accent underline text-sm" onClick={() => {setUnknownOutcome(false); setError('');}}>I checked saved records; allow another save</button>}
                         <div>
-                            <label className="block text-sm font-medium text-secondary mb-1.5">
+                            <label htmlFor={`${fieldId}-service`} className="block text-sm font-medium text-secondary mb-1.5">
                             Service Name
                             </label>
                             <input
+                                id={`${fieldId}-service`}
                                 type="text"
                                 required
                                 placeholder="e.g., Netflix, Spotify"
@@ -89,32 +91,29 @@ function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: Subscript
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-secondary mb-1.5">
-                            Monthly Amount
+                            <label htmlFor={`${fieldId}-amount`} className="block text-sm font-medium text-secondary mb-1.5">
+                            Monthly Amount ({draft.currency})
                             </label>
-                            <div className="relative">
-                                <span className="absolute left-3 top-2.5 text-secondary font-bold select-none">
-                                    {CURRENCY_SYMBOLS[currency]} 
-                            </span>
-                                <input
-                                    type="text"
-                                        inputMode="decimal"
+                                <AmountInput
+                                    id={`${fieldId}-amount`}
+                                    ref={amountRef}
+                                    currency={draft.currency}
+                                    symbol={CURRENCY_SYMBOLS[draft.currency]}
+                                    aria-invalid={amountInvalid}
+                                    aria-describedby={[draft.warning && `${fieldId}-rate-warning`, error && `${fieldId}-error`].filter(Boolean).join(' ') || undefined}
                                     required
-                                    min="0"
-                                    step="0.01"
                                     placeholder="0.00"
-                                    value={amount}
-                                    onChange={(e) => { setAmount(e.target.value); setAmountDirty(true); }}
-                                    className="w-full pl-8 pr-4 py-2.5 bg-canvas border border-control rounded-control focus:outline-none focus:ring-2 focus:ring-accent/20 text-primary transition-colors"
+                                    value={draft.values.amount}
+                                    onChange={(e) => { draft.setValue('amount', e.target.value); setAmountInvalid(false); }}
                                 />
-                            </div>
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-secondary mb-1.5">
+                            <label htmlFor={`${fieldId}-date`} className="block text-sm font-medium text-secondary mb-1.5">
                             Next Payment Date
                             </label>
                             <input
+                                id={`${fieldId}-date`}
                                 type="date"
                                 required
                                 value={nextPaymentDate}
@@ -124,10 +123,11 @@ function SubscriptionModal({ isOpen, onClose, onSubmit, initialData }: Subscript
                         </div>
 
                         <div>
-                            <label className="block text-sm font-medium text-secondary mb-1.5">
+                            <label htmlFor={`${fieldId}-status`} className="block text-sm font-medium text-secondary mb-1.5">
                             Status
                             </label>
                             <SelectControl
+                                id={`${fieldId}-status`}
                                 containerClassName="w-full"
                                 aria-label="Subscription status"
                                 value={status}
