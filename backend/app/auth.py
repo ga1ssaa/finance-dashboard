@@ -20,6 +20,8 @@ import jwt
 from sqlalchemy import select
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
+from app.rate_limits import RateLimitUnavailable
 
 from app.auth_schemas import normalized_email
 from app.models import AuthSession, User
@@ -33,6 +35,7 @@ ISSUER = "finance-dashboard"
 AUDIENCE = "finance-dashboard-web"
 PASSWORD_HASHER = PasswordHasher(time_cost=3, memory_cost=65536, parallelism=1, hash_len=32, salt_len=16, type=Type.ID)
 DUMMY_PASSWORD_HASH = PASSWORD_HASHER.hash(secrets.token_urlsafe(32))
+PASSWORD_WORK = threading.BoundedSemaphore(2)  # At most 128 MiB of concurrent Argon2 work.
 bearer = HTTPBearer(auto_error=False)
 
 
@@ -46,9 +49,15 @@ def unauthorized() -> HTTPException:
 
 def password_matches(encoded: str, password: str) -> bool:
     try:
-        return PASSWORD_HASHER.verify(encoded, password)
+        with PASSWORD_WORK:
+            return PASSWORD_HASHER.verify(encoded, password)
     except (VerificationError, InvalidHashError):
         return False
+
+
+def hash_password(password: str) -> str:
+    with PASSWORD_WORK:
+        return PASSWORD_HASHER.hash(password)
 
 
 def token_hash(raw_token: str) -> str:
@@ -121,7 +130,7 @@ def clear_refresh_cookie(response: Response, production: bool) -> None:
 
 
 class AuthRateLimiter:
-    """Bounded, process-local limits. Production startup is explicitly blocked."""
+    """Bounded process-local limits for development/test only."""
 
     def __init__(self, max_keys: int = 10000):
         self.max_keys = max_keys
@@ -195,7 +204,11 @@ class AuthProtectionMiddleware(BaseHTTPMiddleware):
                         email = None
                     if email:
                         rules.append(("login:email:" + token_hash(email), 5, 60))
-            retry = request.app.state.auth_rate_limiter.check(rules)
+            try:
+                retry = await run_in_threadpool(request.app.state.auth_rate_limiter.check, rules)
+            except RateLimitUnavailable:
+                return JSONResponse(status_code=503, content={"detail": "Authentication protection unavailable"},
+                                    headers={"Cache-Control": "no-store", "Pragma": "no-cache"})
             if retry:
                 response = JSONResponse(status_code=429, content={"detail": "Too many authentication attempts"}, headers={"Retry-After": str(retry)})
             elif too_large:

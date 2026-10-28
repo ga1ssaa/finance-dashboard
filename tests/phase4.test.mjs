@@ -13,6 +13,7 @@ async function moduleFrom(path, replace = value => value) {
 // Isolate transport contracts from authentication; actual auth behavior is tested separately.
 const client = await moduleFrom('../src/api/client.ts', source => source
   .replace(/^import .*from '.\/authSession';$/m, 'const authenticatedFetch=(...args)=>fetch(...args); const configureAuthApi=()=>{}; const getSessionEpoch=()=>0; class SessionChangedError extends Error {} class SessionExpiredError extends Error {}')
+  .replace("'./apiConfig'", JSON.stringify(new URL('../src/api/apiConfig.ts', import.meta.url).href))
   .replace('import.meta.env.VITE_API_BASE_URL', '"http://127.0.0.1:18084/api/v1"'));
 
 test('money preserves canonical precision and aggregate range', () => {

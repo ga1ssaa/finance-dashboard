@@ -6,7 +6,7 @@ import secrets
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import DUMMY_PASSWORD_HASH, PASSWORD_HASHER, password_matches, token_hash, utcnow
+from app.auth import DUMMY_PASSWORD_HASH, PASSWORD_HASHER, hash_password, password_matches, token_hash, utcnow
 from app.models import AuthRefreshToken, AuthSession, Owner, User
 
 
@@ -44,7 +44,7 @@ def login(session: Session, email: str, password: str):
     if user is None or not verified:
         return None
     if PASSWORD_HASHER.check_needs_rehash(user.password_hash):
-        user.password_hash = PASSWORD_HASHER.hash(password)
+        user.password_hash = hash_password(password)
     return new_session(session, user)
 
 

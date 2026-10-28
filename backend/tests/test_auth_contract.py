@@ -125,11 +125,9 @@ def test_limiter_window_and_bounded_cardinality_fail_closed(monkeypatch):
     assert limiter.check([("email:C", 5, 60)]) is None
 
 
-def test_production_startup_fails_closed_without_distributed_limiter():
-    configured = Settings(_env_file=None, DATABASE_URL="postgresql+psycopg://test:unused@127.0.0.1:65432/unused", APP_ENV="production")
-    with pytest.raises(RuntimeError, match="distributed"):
-        with TestClient(create_app(configured)):
-            pass
+def test_production_configuration_fails_closed_without_approved_production_contract():
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, DATABASE_URL="postgresql+psycopg://test:unused@127.0.0.1:65432/unused", APP_ENV="production")
 
 
 def test_cross_site_rejections_cannot_consume_registration_quota(client):

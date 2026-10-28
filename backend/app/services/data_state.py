@@ -29,7 +29,7 @@ class DataState:
 def require_data_schema(connection):
     try:
         revisions = connection.execute(text("SELECT version_num FROM public.alembic_version ORDER BY version_num")).scalars().all()
-        if revisions != [REVISION]:
+        if revisions not in ([REVISION], ["0005_auth_rate_limits"]):
             raise unavailable()
         # References every required receipt column without reading any receipt.
         result = connection.execute(select(*DataOperationReceipt.__table__.columns).limit(0))

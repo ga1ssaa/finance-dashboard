@@ -1,6 +1,7 @@
 """Application factory with separate liveness and database readiness endpoints."""
 
 from contextlib import asynccontextmanager
+import os
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,6 +16,9 @@ from app.api.data import router as data_router
 from app.auth import AuthProtectionMiddleware, AuthRateLimiter
 from app.config import Settings
 from app.db import create_database_engine, create_session_factory
+from app.production import require_heroku
+from app.production_proxy import HerokuProxyMiddleware
+from app.rate_limits import PostgresAuthRateLimiter, production_schema_ready
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -23,10 +27,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         if configured_settings.app_env == "production":
-            raise RuntimeError("Production startup requires a distributed authentication limiter and an approved proxy contract")
+            require_heroku(os.environ)
         engine = create_database_engine(configured_settings)
         app.state.engine = engine
         app.state.session_factory = create_session_factory(engine)
+        if configured_settings.app_env == "production":
+            app.state.auth_rate_limiter = PostgresAuthRateLimiter(engine, configured_settings.auth_jwt_secret.get_secret_value())
         try:
             yield
         finally:
@@ -41,8 +47,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["GET", "POST", "PATCH", "DELETE"],
         allow_headers=["Content-Type", "Authorization", "X-CSRF-Protection", "Idempotency-Key"],
     )
+    if configured_settings.app_env == "production":
+        app.add_middleware(HerokuProxyMiddleware, api_origin=configured_settings.production_api_origin)
     app.state.settings = configured_settings
-    app.state.auth_rate_limiter = AuthRateLimiter()
+    if configured_settings.app_env != "production":
+        app.state.auth_rate_limiter = AuthRateLimiter()
     app.include_router(finance_router)
     app.include_router(auth_router)
     app.include_router(data_router)
@@ -81,6 +90,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             with app.state.engine.connect() as connection:
                 connection.execute(text("SELECT 1"))
+                if configured_settings.app_env == "production" and not production_schema_ready(connection):
+                    return JSONResponse(status_code=503, content={"status": "not_ready"})
         except SQLAlchemyError:
             return JSONResponse(status_code=503, content={"status": "not_ready"})
         return JSONResponse(content={"status": "ready"})

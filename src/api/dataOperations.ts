@@ -1,4 +1,5 @@
 import { API_BASE_URL } from './client';
+import { validateApiBaseUrl } from './apiConfig';
 import { authenticatedFetch, getAuthSnapshot, getSessionEpoch, SessionChangedError } from './authSession';
 import { readImportDocument } from './importPreview';
 import type { ResourceCounts } from './importPreview';
@@ -72,10 +73,8 @@ function assertSession(userId: string, epoch: number): void {
 }
 function endpoint(path: string): string {
     const url = new URL(`${API_BASE_URL}/data/${path}`);
-    if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
-        || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
-        throw new DataOperationError('API_UNAVAILABLE', 'The finance API must use a local loopback URL.');
-    }
+    try { validateApiBaseUrl(API_BASE_URL); }
+    catch { throw new DataOperationError('API_UNAVAILABLE', 'The finance API origin is not approved.'); }
     return url.toString();
 }
 function countsValid(value: unknown): value is ResourceCounts {

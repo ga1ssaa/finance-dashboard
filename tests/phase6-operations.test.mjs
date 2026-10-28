@@ -27,6 +27,7 @@ async function operations(send=async()=>Response.json(receipt())){
   const source=await readFile(new URL('../src/api/dataOperations.ts',import.meta.url),'utf8');
   let code=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText;
   code=code.replace(/^import .*;$/gm,'');
+  code = `import { validateApiBaseUrl } from ${JSON.stringify(new URL('../src/api/apiConfig.ts', import.meta.url).href)};\n${code}`;
   code=`const {API_BASE_URL,getSessionEpoch,getAuthSnapshot,SessionChangedError,authenticatedFetch,readImportDocument}=globalThis.${name};\n${code}`;
   const module=await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);
   return{...module,calls,setAccount:next=>{epoch++;user=next;},current:()=>module.getDataOperationState(user?.id||'anonymous')};

@@ -14,9 +14,11 @@ class Base(DeclarativeBase):
 
 
 def create_database_engine(settings: Settings) -> Engine:
+    production = settings.app_env == "production"
     return create_engine(
         settings.database_url.get_secret_value(),
-        connect_args={"connect_timeout": 3},
+        connect_args={"connect_timeout": 3, **({"sslmode": "verify-full", "sslrootcert": settings.database_sslrootcert, "ssl_min_protocol_version": "TLSv1.2", "options": "-csearch_path=public"} if production else {})},
+        **({"pool_size": 3, "max_overflow": 0, "pool_recycle": 300} if production else {}),
         pool_pre_ping=True,
         pool_timeout=3,
         hide_parameters=True,

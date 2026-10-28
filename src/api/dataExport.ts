@@ -1,4 +1,5 @@
 import { API_BASE_URL } from './client';
+import { validateApiBaseUrl } from './apiConfig';
 import { authenticatedFetch, getSessionEpoch, SessionChangedError } from './authSession';
 import type { BudgetRecord, SubscriptionRecord, TransactionRecord } from './client';
 import type { Currency } from '../state/financeStore';
@@ -40,10 +41,7 @@ export async function fetchAccountExport(signal?: AbortSignal): Promise<{ blob: 
     const epoch = getSessionEpoch();
     assertActive(epoch, signal);
     const url = new URL(`${API_BASE_URL}/data/export`);
-    if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
-        || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
-        throw new Error('The finance API must use a local loopback URL.');
-    }
+    validateApiBaseUrl(API_BASE_URL);
     const response = await authenticatedFetch(url.toString(), { method: 'GET', signal, cache: 'no-store' });
     assertActive(epoch, signal);
     if (!response.ok) {

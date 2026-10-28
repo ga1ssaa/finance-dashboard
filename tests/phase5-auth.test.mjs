@@ -6,7 +6,7 @@ import ts from 'typescript';
 
 let moduleId = 0;
 async function session() {
-  const source = await readFile(new URL('../src/api/authSession.ts', import.meta.url), 'utf8');
+  const source = (await readFile(new URL('../src/api/authSession.ts', import.meta.url), 'utf8')).replace("'./apiConfig'", JSON.stringify(new URL('../src/api/apiConfig.ts', import.meta.url).href));
   const code = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
   const value = await import(`data:text/javascript;base64,${Buffer.from(code + `\n// isolated test ${moduleId++}`).toString('base64')}`);
   value.configureAuthApi('http://127.0.0.1:18085/api/v1');

@@ -17,6 +17,7 @@ from app.data_authorization import require_session_identity
 from app.data_operation_errors import DataOperationError
 from app.data_operation_schemas import AuthorizedImportPreview, DataOperationResult, ImportApplyRequest, ResetPreviewRequest, ResetPreviewResponse, ResetRequest
 from app.db import get_session
+from app.rate_limits import RateLimitUnavailable
 from app.export_schemas import ExportDocument
 from app.import_preview_schemas import ImportPreviewRequest, ImportPreviewResponse
 from app.services.data_export import ExportDataInvalid, ExportTooLarge, export_owner_data
@@ -136,15 +137,18 @@ async def _operation_body(request):
     return bytes(body)
 
 
-def _write_guard(request, user):
+async def _write_guard(request, user):
     require_session_identity(user)
     settings = request.app.state.settings
     if request.headers.get("origin") not in settings.cors_allowed_origins or request.headers.get("x-csrf-protection") != "1":
         raise DataOperationError(403, "CSRF_REJECTED", "Request origin or CSRF protection is invalid")
     ip = request.client.host if request.client else "unknown"
-    retry = request.app.state.auth_rate_limiter.check([
-        ("data-write:user:" + str(user.id), 5, 600), ("data-write:ip:" + ip, 10, 600),
-    ])
+    try:
+        retry = await run_in_threadpool(request.app.state.auth_rate_limiter.check, [
+            ("data-write:user:" + str(user.id), 5, 600), ("data-write:ip:" + ip, 10, 600),
+        ])
+    except RateLimitUnavailable:
+        raise DataOperationError(503, "DATA_OPERATIONS_UNAVAILABLE", "Authentication protection unavailable") from None
     if retry:
         raise DataOperationError(429, "RATE_LIMITED", "Too many data operation attempts", {"Retry-After": str(retry)})
     try:
@@ -170,14 +174,14 @@ async def reset_preview(request: Request, user: UserDependency):
 
 @router.post("/import", response_model=DataOperationResult, openapi_extra=_request_schema(ImportApplyRequest))
 async def import_data(request: Request, user: UserDependency, session: DataSession):
-    key = _write_guard(request, user)
+    key = await _write_guard(request, user)
     raw = await _operation_body(request)
     return await run_in_threadpool(apply_import, session, user, request.app.state.settings, raw, key)
 
 
 @router.post("/reset", response_model=DataOperationResult, openapi_extra=_request_schema(ResetRequest))
 async def reset_financial_data(request: Request, user: UserDependency, session: DataSession):
-    key = _write_guard(request, user)
+    key = await _write_guard(request, user)
     raw = await _operation_body(request)
     return await run_in_threadpool(reset_data, session, user, request.app.state.settings, raw, key)
 

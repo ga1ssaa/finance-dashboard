@@ -1,12 +1,7 @@
 import { authenticatedFetch, configureAuthApi, getSessionEpoch, SessionChangedError, SessionExpiredError } from './authSession';
+import { validateApiBaseUrl } from './apiConfig';
 export const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000/api/v1').replace(/\/$/, '');
 configureAuthApi(API_BASE_URL);
-function validateLocalApi() {
-    const url = new URL(API_BASE_URL);
-    if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
-        throw new Error('The finance API must use a local loopback URL.');
-    }
-}
 export class UnknownWriteOutcomeError extends Error {
     constructor(cause: unknown) {
         super('Save outcome unknown. Check saved records before trying again; the server may have saved this request.', { cause });
@@ -14,7 +9,7 @@ export class UnknownWriteOutcomeError extends Error {
     }
 }
 export async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-    validateLocalApi();
+    validateApiBaseUrl(API_BASE_URL);
     const epoch = getSessionEpoch();
     const isWrite = Boolean(options.method && options.method !== 'GET');
     let response: Response;

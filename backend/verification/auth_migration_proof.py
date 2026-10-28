@@ -56,6 +56,7 @@ def main(argv=None):
         target = guarded_engine(source, database, mode="target_write")
         config = Config(str(root / "backend/alembic.ini"))
         config.set_main_option("script_location", str(root / "backend/alembic"))
+        config.attributes["migration_target_url"] = target.url
         with target.begin() as connection:
             verify_database(connection, database)
             config.attributes["connection"] = connection

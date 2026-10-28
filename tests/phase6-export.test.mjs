@@ -23,6 +23,7 @@ async function loadExport({ response = () => Response.json(bundle()), base = 'ht
   try {
     let source = await readFile(new URL('../src/api/dataExport.ts', import.meta.url), 'utf8');
     source = source.replace(/^import .*$/gm, '');
+    source = `import { validateApiBaseUrl } from ${JSON.stringify(new URL('../src/api/apiConfig.ts', import.meta.url).href)};\n${source}`;
     source = `const {API_BASE_URL,getSessionEpoch,SessionChangedError,authenticatedFetch}=globalThis.${key};\n${source}`;
     const code = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
     const value = await import(`data:text/javascript;base64,${Buffer.from(code).toString('base64')}`);

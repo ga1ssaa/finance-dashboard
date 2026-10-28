@@ -8,13 +8,15 @@ from sqlalchemy import Connection
 import app.models  # noqa: F401 -- registers the mapped tables in Base.metadata
 from app.config import Settings
 from app.db import Base, create_database_engine
+from app.production_migrations import require_authorization
+from app.rate_limits import rate_table
 
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
-target_metadata = Base.metadata
+target_metadata = [Base.metadata, rate_table.metadata]
 
 
 def run_migrations_offline() -> None:
@@ -32,6 +34,8 @@ def run_migrations_offline() -> None:
 
 
 def run_with_connection(connection: Connection) -> None:
+    # Both supplied and newly opened connections must pass before any Alembic DDL.
+    require_authorization(Settings(), config, connection=connection)
     context.configure(
         connection=connection,
         target_metadata=target_metadata,
@@ -43,12 +47,14 @@ def run_with_connection(connection: Connection) -> None:
 
 
 def run_migrations_online() -> None:
+    settings = Settings()
+    require_authorization(settings, config)
     provided_connection = config.attributes.get("connection")
     if provided_connection is not None:
         run_with_connection(provided_connection)
         return
 
-    engine = create_database_engine(Settings())
+    engine = create_database_engine(settings)
     try:
         with engine.connect() as connection:
             run_with_connection(connection)

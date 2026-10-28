@@ -266,7 +266,7 @@ with the backend environment file.
 
 This is a **local HTTP stack**, not a production deployment. It deliberately keeps
 `APP_ENV=development`, existing cookies/CSRF/origin rules, one API worker and
-`--no-proxy-headers`; production mode remains blocked by the application. Behind
+`--no-proxy-headers`; production mode requires the separate reviewed Heroku configuration in [docs/production.md](docs/production.md). Behind
 Nginx, the existing IP rate limits are shared across local users. No auth behavior
 or financial contract is changed. Exchange rates still require the existing
 external provider; no rates are fabricated by Compose.
@@ -311,7 +311,7 @@ npm install
 npm run dev -- --host 127.0.0.1 --port 5173 --strictPort
 ```
 
-`VITE_API_BASE_URL` defaults to `http://127.0.0.1:8000/api/v1`. The client accepts loopback API URLs only; use the backend CORS configuration for a different local frontend port. Restart Vite after changing its environment. This is a local authenticated application; do not expose this development setup publicly. Use `127.0.0.1` for both Vite and the API (or `localhost` for both) so the host-only refresh cookie works across their ports.
+`VITE_API_BASE_URL` defaults to `http://127.0.0.1:8000/api/v1`. Local configuration accepts loopback API URLs; use the backend CORS configuration for a different local frontend port. Public HTTPS deployment uses the separate same-site configuration in [docs/production.md](docs/production.md). Restart Vite after changing its environment. This is a local authenticated application; do not expose this development setup publicly. Use `127.0.0.1` for both Vite and the API (or `localhost` for both) so the host-only refresh cookie works across their ports.
 
 Sign in at `/login` or create an account at `/register`. New registrations start with an empty account. Existing records in the former single-owner namespace are not automatically assigned to registered users.
 
@@ -391,3 +391,10 @@ report policy tests with:
 ```sh
 python3 -m unittest discover -s .github/scripts -p 'test_*.py' -q
 ```
+
+## Production preparation
+
+The Vercel Hobby + Heroku Basic/Essential-0 preparation, security boundaries,
+manual new-database migration guard and backup/restore runbook are documented in
+[docs/production.md](docs/production.md). No deployment or real migration has been
+performed. Local Compose remains isolated and unchanged.

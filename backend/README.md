@@ -8,8 +8,9 @@ migrations, and health endpoints.
 Authentication isolates each account's financial namespace. Every financial
 route requires a short-lived Bearer token and checks its active server session;
 health checks and interactive documentation remain public. Bind the development
-API to `127.0.0.1`. Production startup is deliberately blocked until a shared
-rate limiter and an approved reverse-proxy contract are implemented.
+API to `127.0.0.1`. Production requires the shared PostgreSQL auth limiter and explicit Heroku
+configuration described in [the production runbook](../docs/production.md).
+Incomplete production configuration and unapproved migrations fail closed.
 
 Existing owners and financial records are preserved and remain unclaimed.
 Registration always creates a fresh owner. `SINGLE_OWNER_ID` is no longer used
@@ -73,7 +74,7 @@ the URL; do not log its unwrapped value. `AUTH_JWT_SECRET` is required, must
 contain at least 32 UTF-8 bytes, and has no fallback. Generate it privately
 with `secrets.token_urlsafe(48)`; preserve an existing key rather than replacing
 it during setup. Never print the key or commit it. `APP_ENV` defaults to
-`development`; `test` is also available. `production` startup is blocked.
+`development`; `test` is also available. `production` uses a separate strict Heroku configuration; see the runbook.
 
 The React development server may call the API from `http://localhost:5173` or
 `http://127.0.0.1:5173` by default. The explicit API origin

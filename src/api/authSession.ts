@@ -1,3 +1,5 @@
+import { validateApiBaseUrl } from './apiConfig';
+
 export interface AuthUser {
     id: string;
     email: string;
@@ -72,10 +74,7 @@ function authRequest<T>(path: string, epoch: number, body?: object): Promise<T> 
     });
 }
 async function sendAuthRequest<T>(path: string, body?: object): Promise<T> {
-    const url = new URL(apiBaseUrl);
-    if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname) || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
-        throw new Error('The finance API must use a local loopback URL.');
-    }
+    validateApiBaseUrl(apiBaseUrl);
     let response: Response;
     try {
         response = await fetch(`${apiBaseUrl}/auth/${path}`, {

@@ -1,4 +1,5 @@
 import { API_BASE_URL } from './client';
+import { validateApiBaseUrl } from './apiConfig';
 import { authenticatedFetch, getSessionEpoch, SessionChangedError } from './authSession';
 
 export interface ResourceCounts {
@@ -92,10 +93,7 @@ export async function previewImportFile(file: File, signal?: AbortSignal): Promi
     }
     assertActive(epoch, signal);
     const url = new URL(`${API_BASE_URL}/data/import/preview`);
-    if (!['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
-        || !['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
-        throw new Error('The finance API must use a local loopback URL.');
-    }
+    validateApiBaseUrl(API_BASE_URL);
     let response: Response;
     try {
         response = await authenticatedFetch(url.toString(), {
