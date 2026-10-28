@@ -16,15 +16,15 @@ BACKEND_ROOT = Path(__file__).resolve().parents[1]
 
 
 def production_origin(value: str, site: str) -> str:
-    """Only HTTPS origins on the explicitly owned two-label .me site are supported."""
+    """Only HTTPS origins on the explicitly configured two-label .me/.app site are supported."""
     parsed = urlsplit(value)
     host = parsed.hostname or ""
-    if (not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.me", site)
+    if (not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.(?:me|app)", site)
         or parsed.scheme != "https" or parsed.netloc != host or parsed.path or parsed.query or parsed.fragment
         or not (host == site or host.endswith("." + site))
         or not all(re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", part) for part in host.split("."))
         or value != "https://" + host):
-        raise ValueError("Production origins must be exact HTTPS origins on PRODUCTION_SITE_DOMAIN (.me)")
+        raise ValueError("Production origins must be exact HTTPS origins on PRODUCTION_SITE_DOMAIN (.me or .app)")
     return value
 
 

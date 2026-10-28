@@ -18,12 +18,12 @@ export function validateApiBaseUrl(
     const frontend = appOrigin ? new URL(appOrigin) : null;
     const site = frontend?.hostname.split('.').slice(-2).join('.') || '';
     const validHost = (host: string) => host === site || host.endsWith(`.${site}`);
-    if (!frontend || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.me$/.test(site)
+    if (!frontend || !/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.(?:me|app)$/.test(site)
         || frontend.protocol !== 'https:' || appOrigin !== frontend.origin
         || frontend.username || frontend.password || frontend.port || url.port
         || url.protocol !== 'https:' || !validHost(url.hostname)
         || (browserOrigin && browserOrigin !== frontend.origin)) {
-        throw new Error('The finance API requires a local loopback URL or approved same-site HTTPS .me origins.');
+        throw new Error('The finance API requires a local loopback URL or approved same-site HTTPS .me/.app origins.');
     }
     return url;
 }

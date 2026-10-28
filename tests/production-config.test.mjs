@@ -52,3 +52,27 @@ test('Vercel retains SPA routes and uses the existing Vite production build',asy
   assert.equal(config.framework,'vite');assert.equal(config.buildCommand,'npm run build');assert.equal(config.outputDirectory,'dist');
   assert.deepEqual(config.rewrites,[{source:'/(.*)',destination:'/index.html'}]);
 });
+
+test('registered getavero.app apex and API subdomain are compatible without changing local development',()=>{
+  assert.equal(validateApiBaseUrl('https://api.getavero.app/api/v1','https://getavero.app','https://getavero.app').href,'https://api.getavero.app/api/v1');
+  assert.equal(validateApiBaseUrl('http://127.0.0.1:8000/api/v1','','http://127.0.0.1:5173').href,'http://127.0.0.1:8000/api/v1');
+});
+
+for(const [endpoint,origin,page] of [
+  ['https://api.getavero.app/api/v1','','https://getavero.app'],
+  ['http://api.getavero.app/api/v1','https://getavero.app','https://getavero.app'],
+  ['https://api.other.app/api/v1','https://getavero.app','https://getavero.app'],
+  ['https://api.getavero.app.evil.app/api/v1','https://getavero.app','https://getavero.app'],
+  ['https://api.notgetavero.app/api/v1','https://getavero.app','https://getavero.app'],
+  ['https://api.getavero.me/api/v1','https://getavero.app','https://getavero.app'],
+  ['https://api.getavero.app:8443/api/v1','https://getavero.app','https://getavero.app'],
+  ['https://user:synthetic@api.getavero.app/api/v1','https://getavero.app','https://getavero.app'],
+  ['https://api.getavero.app/api/v1?x=1','https://getavero.app','https://getavero.app'],
+  ['https://api.getavero.app/api/v1#x','https://getavero.app','https://getavero.app'],
+  ['https://api.getavero.app/api/v1','https://getavero.app/','https://getavero.app'],
+  ['https://api.getavero.app/api/v1','http://getavero.app','https://getavero.app'],
+  ['https://api.getavero.app/api/v1','https://getavero.app','https://www.getavero.app'],
+  ['https://api.getavero.app/api/v1','https://getavero.app','https://preview.vercel.app'],
+])test(`getavero.app refuses unapproved endpoint/origin: ${endpoint} / ${origin} / ${page}`,()=>{
+  assert.throws(()=>validateApiBaseUrl(endpoint,origin,page));
+});

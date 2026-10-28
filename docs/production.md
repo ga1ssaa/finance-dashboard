@@ -7,9 +7,12 @@ Docker project and volumes untouched.
 
 ## Architecture and budget
 
-Use the owned `.me` apex or `app.<owned-name>.me` on Vercel, and
-`api.<owned-name>.me` on one Heroku Basic web dyno. Both origins must be HTTPS
-on the **same registered `.me` domain**. No cross-site cookie mode is supported.
+Use **https://getavero.app** on Vercel Hobby and **https://api.getavero.app** on
+one Heroku Basic web dyno, with Heroku Postgres Essential-0. Both origins use
+HTTPS on the **same registered `getavero.app` site**, so the existing host-only
+Secure, HttpOnly, SameSite=Lax cookie remains compatible with cross-origin auth.
+No cross-site cookie mode is supported. Validators support explicitly configured
+two-label `.app` or `.me` sites; this does not authorize other domains or origins.
 Default `vercel.app` and `herokuapp.com` pairs, and arbitrary preview origins,
 are intentionally rejected. No wildcard CORS, cookie Domain, SameSite=None,
 public database port, Redis, extra worker dyno or paid add-on is added.
@@ -20,6 +23,10 @@ current plan prices/credit eligibility before provisioning. One-off migration
 dynos, extra concurrent dynos, taxes, credit expiry and storage/plan upgrades can
 increase charges. Domain renewal is separate. Vercel Hobby is limited to personal
 non-commercial use and its resource quotas; do not enable paid upgrades implicitly.
+
+The domain is already registered. This phase changes repository configuration
+only; DNS setup, provider domain binding and certificate issuance need separate
+approval and verification.
 
 Official references: [Heroku billing](https://devcenter.heroku.com/articles/usage-and-billing),
 [Postgres pricing](https://www.heroku.com/pricing#databases),
@@ -46,9 +53,9 @@ Set these as private Heroku process config variables, using
 | `AUTH_JWT_SECRET` | Private cryptographically random key, at least 32 bytes; generate with `secrets.token_urlsafe(48)` and never print/share it |
 | `DATABASE_URL` | Provider-managed new database URL; postgres/postgresql schemes normalize to psycopg; do not edit the provider value |
 | `PRODUCTION_DATABASE_HOST` / `PRODUCTION_DATABASE_NAME` | Exact approved provider host and new database identity; update deliberately after provider relocation |
-| `PRODUCTION_SITE_DOMAIN` | Owned registered two-label `.me` domain, without scheme or path |
-| `PRODUCTION_API_ORIGIN` | Exact `https://api.<owned-name>.me` |
-| `CORS_ALLOWED_ORIGINS` | JSON array of exact HTTPS frontend origins on that same site |
+| `PRODUCTION_SITE_DOMAIN` | `getavero.app`, without scheme or path |
+| `PRODUCTION_API_ORIGIN` | `https://api.getavero.app` |
+| `CORS_ALLOWED_ORIGINS` | `["https://getavero.app"]`; do not add wildcard, preview or unapproved subdomain origins |
 | `TRUSTED_PROXY` | `heroku`, only for the reviewed Heroku Common Runtime router boundary |
 | `DATABASE_SSLROOTCERT` | Absolute path to the approved CA bundle available in the dyno; Heroku documents `/usr/lib/ssl/certs/ca-certificates.crt` for its stack |
 
@@ -107,12 +114,13 @@ additional server function is introduced.
 Production public build variables only:
 
 ```
-VITE_API_BASE_URL=https://api.<owned-name>.me/api/v1
-VITE_APP_ORIGIN=https://app.<owned-name>.me
+VITE_API_BASE_URL=https://api.getavero.app/api/v1
+VITE_APP_ORIGIN=https://getavero.app
 ```
 
-Use the apex in VITE_APP_ORIGIN instead if that is the exact chosen frontend
-origin. These variables are **public bundle contents**, never secrets. Never
+The apex is the exact frontend origin. `www.getavero.app` is not currently
+configured: any alias/redirect needs separate approval, never an implicit CORS
+expansion. These variables are **public bundle contents**, never secrets. Never
 set DATABASE_URL, JWT keys, passwords or other private values under VITE_*.
 The shared API URL validator covers auth, CRUD, import/preview/reset and export;
 it rejects insecure, cross-site, credential-bearing and malformed endpoints.
@@ -181,10 +189,10 @@ automatic downgrade or restore in place over the current database.
 
 ## Remaining launch gates and limitations
 
-1. Separate approval for provider resources, domain registration/DNS, config
+1. Separate approval for provider resources, domain DNS, config
    secrets, migration and deployment; this phase performs none of those actions.
 2. Confirm plan/credit eligibility, Python-only buildpack, PostgreSQL 17 support,
-   domain ownership/certificates, provider CA verification and the spending cap.
+   registered-domain DNS/certificates, provider CA verification and the spending cap.
 3. Isolated staging: real TLS, proxy-header contract, browser login/logout and
    refresh, owner-isolated CRUD, shared quota concurrency, small-dyno memory and
    connection load, migration/restore rehearsal. Offline fakes do not prove live
