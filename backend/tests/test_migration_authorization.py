@@ -9,7 +9,10 @@ from pydantic import SecretStr
 import pytest
 from sqlalchemy.engine import make_url
 
-from app.production_migrations import AUTHORIZATION, checked_target, require_authorization
+from app.production_migrations import (
+    AUTHORIZATION, IDENTITY_FAILURE_CODES, IdentityVerificationError,
+    checked_target, require_authorization,
+)
 
 LOCAL = 'postgresql+psycopg://synthetic:unused@127.0.0.1:5434/synthetic_local'
 REMOTE = 'postgresql+psycopg://synthetic:unused@synthetic.example.amazonaws.com:5432/synthetic_production'
@@ -170,3 +173,125 @@ def test_alembic_checks_both_supplied_and_new_connections_before_any_migration(m
         context.configure.assert_not_called();context.run_migrations.assert_not_called()
     else:
         runpy.run_path(str(path));context.run_migrations.assert_called_once()
+
+
+DIAGNOSTIC_CASES = [
+    ('engine', 'ENGINE_TARGET_MISMATCH'),
+    ('malformed_engine', 'ENGINE_TARGET_MISMATCH'),
+    ('missing_engine', 'UNSUPPORTED_CONNECTION_METADATA'),
+    ('missing_driver', 'UNSUPPORTED_CONNECTION_METADATA'),
+    ('missing_host', 'UNSUPPORTED_CONNECTION_METADATA'),
+    ('host', 'DRIVER_TARGET_MISMATCH'),
+    ('port', 'DRIVER_TARGET_MISMATCH'),
+    ('dbname', 'DRIVER_TARGET_MISMATCH'),
+    ('user', 'DRIVER_TARGET_MISMATCH'),
+    ('hostaddr', 'DRIVER_TARGET_MISMATCH'),
+    ('tls_mode', 'TLS_POLICY_MISMATCH'),
+    ('tls_ca', 'TLS_POLICY_MISMATCH'),
+    ('tls_missing_mode', 'TLS_POLICY_MISMATCH'),
+    ('tls_missing_ca', 'TLS_POLICY_MISMATCH'),
+    ('tls_plaintext', 'TLS_POLICY_MISMATCH'),
+    ('missing_parameters', 'UNSUPPORTED_CONNECTION_METADATA'),
+    ('server_database', 'SERVER_IDENTITY_MISMATCH'),
+    ('server_user', 'SERVER_IDENTITY_MISMATCH'),
+    ('session_user', 'SERVER_IDENTITY_MISMATCH'),
+    ('server_address', 'SERVER_IDENTITY_MISMATCH'),
+    ('server_port', 'SERVER_IDENTITY_MISMATCH'),
+    ('query', 'SERVER_IDENTITY_QUERY_FAILED'),
+    ('fetch', 'SERVER_IDENTITY_QUERY_FAILED'),
+    ('cursor_close', 'SERVER_IDENTITY_QUERY_FAILED'),
+    ('timeout', 'IDENTITY_TIMEOUT'),
+    ('metadata_timeout', 'IDENTITY_TIMEOUT'),
+    ('unexpected', 'IDENTITY_CHECK_ERROR'),
+]
+
+
+def diagnostic_failure(case, connection, driver, cursor):
+    private = 'synthetic-secret-details-never-print'
+    if case == 'engine':
+        connection.engine.url = make_url(REMOTE).set(database='unapproved')
+    elif case == 'malformed_engine':
+        connection.engine.url = private
+    elif case == 'missing_engine':
+        del connection.engine
+    elif case == 'missing_driver':
+        del connection.connection.driver_connection
+    elif case == 'missing_host':
+        del driver.info.host
+    elif case in {'host', 'dbname', 'user', 'hostaddr', 'port'}:
+        setattr(driver.info, case, 5433 if case == 'port' else private)
+    elif case.startswith('tls_'):
+        parameters = {'sslmode': 'verify-full', 'sslrootcert': CA}
+        if case == 'tls_mode': parameters['sslmode'] = 'require'
+        elif case == 'tls_ca': parameters['sslrootcert'] = private
+        elif case == 'tls_missing_mode': del parameters['sslmode']
+        elif case == 'tls_missing_ca': del parameters['sslrootcert']
+        elif case == 'tls_plaintext': driver.pgconn.ssl_in_use = False
+        driver.info.get_parameters = lambda: parameters
+    elif case == 'missing_parameters':
+        del driver.info.get_parameters
+    elif case in {'server_database', 'server_user', 'session_user', 'server_address', 'server_port'}:
+        row = list(cursor.fetchone.return_value)
+        index = {'server_database': 0, 'server_user': 1, 'session_user': 2, 'server_address': 3, 'server_port': 4}[case]
+        row[index] = private
+        cursor.fetchone.return_value = tuple(row)
+    elif case in {'query', 'timeout'}:
+        cursor.execute.side_effect = TimeoutError(private) if case == 'timeout' else RuntimeError(private)
+    elif case == 'fetch':
+        cursor.fetchone.side_effect = RuntimeError(private)
+    elif case == 'cursor_close':
+        driver.cursor.return_value.__exit__.side_effect = RuntimeError(private)
+    elif case in {'unexpected', 'metadata_timeout'}:
+        def broken():
+            raise TimeoutError(private) if case == 'metadata_timeout' else RuntimeError(private)
+        driver.info.get_parameters = broken
+    else:
+        raise AssertionError('Unknown synthetic case')
+
+
+@pytest.mark.parametrize('case,code', DIAGNOSTIC_CASES)
+@pytest.mark.parametrize('entrypoint', ['authorization', 'runner'])
+def test_fixed_diagnostics_block_authorization_and_runner(monkeypatch, case, code, entrypoint):
+    from app import production_migrations as migrations
+    import traceback
+
+    connection, driver, cursor = synthetic_connection(REMOTE)
+    diagnostic_failure(case, connection, driver, cursor)
+    configured = settings(REMOTE, 'production')
+    upgrade = MagicMock()
+    monkeypatch.setattr(migrations.command, 'upgrade', upgrade)
+    engine = MagicMock()
+    engine.begin.return_value.__enter__.return_value = connection
+    monkeypatch.setattr(migrations, 'create_database_engine', lambda _: engine)
+    with pytest.raises(IdentityVerificationError) as error:
+        if entrypoint == 'authorization':
+            require_authorization(configured, config_for(connection, authorized=True))
+        else:
+            target = make_url(REMOTE)
+            configured.production_database_host = target.host
+            configured.production_database_name = target.database
+            migrations.migrate_new_database(configured, target.host, target.database, migrations.PHRASE,
+                                           environ={'DYNO': 'run.1234'})
+    assert error.value.code == str(error.value) == code
+    assert error.value.args == (code,)
+    rendered = ''.join(traceback.format_exception(error.value))
+    assert 'synthetic-secret-details-never-print' not in rendered
+    assert REMOTE not in rendered
+    upgrade.assert_not_called()
+    connection.execute.assert_not_called()
+    driver.commit.assert_not_called()
+    driver.rollback.assert_not_called()
+    if entrypoint == 'runner': engine.dispose.assert_called_once()
+
+
+def test_diagnostic_allowlist_is_exact_and_error_output_revalidates():
+    assert IDENTITY_FAILURE_CODES == {
+        'ENGINE_TARGET_MISMATCH', 'DRIVER_TARGET_MISMATCH', 'TLS_POLICY_MISMATCH',
+        'SERVER_IDENTITY_MISMATCH', 'UNSUPPORTED_CONNECTION_METADATA',
+        'SERVER_IDENTITY_QUERY_FAILED', 'IDENTITY_TIMEOUT', 'IDENTITY_CHECK_ERROR',
+    }
+    for value in ['unapproved-private-marker', None, {}, ['private']]:
+        error = IdentityVerificationError(value)
+        assert error.code == str(error) == 'IDENTITY_CHECK_ERROR'
+    error.args = ('unapproved-private-marker',)
+    assert error.code == str(error) == 'IDENTITY_CHECK_ERROR'

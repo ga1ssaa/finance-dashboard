@@ -24,7 +24,7 @@ from sqlalchemy import event
 from app.config import Settings
 from app.db import create_database_engine
 from app.production import require_heroku
-from app.production_migrations import checked_target, verify_connection_target
+from app.production_migrations import IdentityVerificationError, checked_target, verify_connection_target
 
 
 EXPECTED_VERSION = 180004
@@ -60,6 +60,10 @@ class PreflightFailure(Exception):
     """Never include provider details in this exception or in output."""
 
 
+class PreflightTimeout(PreflightFailure, TimeoutError):
+    """Let the identity verifier distinguish the existing deadline from other failures."""
+
+
 def _require(condition):
     if not condition:
         raise PreflightFailure()
@@ -82,7 +86,7 @@ def _deadline(seconds=TIMEOUT_SECONDS):
     previous = signal.getsignal(signal.SIGALRM)
 
     def expired(_signum, _frame):
-        raise PreflightFailure()
+        raise PreflightTimeout()
 
     signal.signal(signal.SIGALRM, expired)
     try:
@@ -183,6 +187,8 @@ def _inspect(arm_cleanup):
         _require(min(server_free, role_cap - role_used) >= MIN_SPARE_CONNECTIONS)
         print("PASS connection capacity snapshot")
         status = 0
+    except IdentityVerificationError as error:
+        print("FAIL " + error.code)
     except BaseException:
         print("FAIL " + stage + "; details suppressed")
     finally:

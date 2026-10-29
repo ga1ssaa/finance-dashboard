@@ -16,6 +16,27 @@ AUTHORIZATION = object()  # In-process approval, never an environment-wide migra
 PHRASE = "MIGRATE NEW AVERO PRODUCTION DATABASE"
 LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "postgres"}
 PRIVATE_NETWORKS = tuple(ip_network(value) for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"))
+IDENTITY_FAILURE_CODES = frozenset({
+    "ENGINE_TARGET_MISMATCH", "DRIVER_TARGET_MISMATCH", "TLS_POLICY_MISMATCH",
+    "SERVER_IDENTITY_MISMATCH", "UNSUPPORTED_CONNECTION_METADATA",
+    "SERVER_IDENTITY_QUERY_FAILED", "IDENTITY_TIMEOUT", "IDENTITY_CHECK_ERROR",
+})
+
+
+class IdentityVerificationError(RuntimeError):
+    """Only an allowlisted category may cross the identity-verification boundary."""
+
+    def __init__(self, code):
+        super().__init__(code if type(code) is str and code in IDENTITY_FAILURE_CODES else "IDENTITY_CHECK_ERROR")
+
+    @property
+    def code(self):
+        # Revalidate at output too; never interpolate arbitrary exception text.
+        code = self.args[0] if len(self.args) == 1 else None
+        return code if type(code) is str and code in IDENTITY_FAILURE_CODES else "IDENTITY_CHECK_ERROR"
+
+    def __str__(self):
+        return self.code
 
 
 def checked_target(value):
@@ -41,37 +62,58 @@ def verify_connection_target(settings, connection, target):
     SQLAlchemy events, commits, rollbacks, new connections or transaction changes.
     """
     try:
-        if checked_target(connection.engine.url) != target:
-            raise ValueError()
+        try:
+            actual = checked_target(connection.engine.url)
+        except RuntimeError:
+            raise IdentityVerificationError("ENGINE_TARGET_MISMATCH") from None
+        if actual != target:
+            raise IdentityVerificationError("ENGINE_TARGET_MISMATCH")
         driver = connection.connection.driver_connection
         info = driver.info
         if (info.host != target.host or type(info.port) is not int or info.port != target.port
             or info.dbname != target.database or info.user != target.username):
-            raise ValueError()
-        address = ip_address(info.hostaddr)
+            raise IdentityVerificationError("DRIVER_TARGET_MISMATCH")
+        try:
+            address = ip_address(info.hostaddr)
+        except ValueError:
+            raise IdentityVerificationError("DRIVER_TARGET_MISMATCH") from None
         if target.host in LOCAL_HOSTS:
             if target.host == "postgres":
                 if not (address.is_loopback or any(address in network for network in PRIVATE_NETWORKS)):
-                    raise ValueError()
+                    raise IdentityVerificationError("DRIVER_TARGET_MISMATCH")
             elif not address.is_loopback:
-                raise ValueError()
+                raise IdentityVerificationError("DRIVER_TARGET_MISMATCH")
         if settings.app_env == "production":
             parameters = info.get_parameters()
             if (driver.pgconn.ssl_in_use is not True or parameters.get("sslmode") != "verify-full"
                 or parameters.get("sslrootcert") != settings.database_sslrootcert):
-                raise ValueError()
-        with driver.cursor() as cursor:
-            cursor.execute("SELECT current_database(), current_user, session_user, inet_server_addr()::text, inet_server_port()")
-            row = cursor.fetchone()
+                raise IdentityVerificationError("TLS_POLICY_MISMATCH")
+        try:
+            with driver.cursor() as cursor:
+                cursor.execute("SELECT current_database(), current_user, session_user, inet_server_addr()::text, inet_server_port()")
+                row = cursor.fetchone()
+        except TimeoutError:
+            raise
+        except Exception:
+            raise IdentityVerificationError("SERVER_IDENTITY_QUERY_FAILED") from None
         if (not row or len(row) != 5 or tuple(row[:3]) != (target.database, target.username, target.username)
             or type(row[4]) is not int or not 1 <= row[4] <= 65535):
-            raise ValueError()
-        server = ip_address(row[3])
+            raise IdentityVerificationError("SERVER_IDENTITY_MISMATCH")
+        try:
+            server = ip_address(row[3])
+        except ValueError:
+            raise IdentityVerificationError("SERVER_IDENTITY_MISMATCH") from None
         # Local Docker may publish 5434 while PostgreSQL reports its private IP/5432.
         if target.host in LOCAL_HOSTS and not (server.is_loopback or any(server in network for network in PRIVATE_NETWORKS)):
-            raise ValueError()
+            raise IdentityVerificationError("SERVER_IDENTITY_MISMATCH")
+    except IdentityVerificationError:
+        raise
+    except TimeoutError:
+        raise IdentityVerificationError("IDENTITY_TIMEOUT") from None
+    except (AttributeError, TypeError, NotImplementedError):
+        raise IdentityVerificationError("UNSUPPORTED_CONNECTION_METADATA") from None
     except Exception:
-        raise RuntimeError("Actual migration connection target could not be verified against the authorized target") from None
+        raise IdentityVerificationError("IDENTITY_CHECK_ERROR") from None
 
 
 def require_authorization(settings, config, *, connection=None):

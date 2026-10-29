@@ -274,13 +274,13 @@ def test_invalid_connect_arguments_rejected_before_handshake(synthetic, capsys, 
 @pytest.mark.parametrize("field,value", [("host", "wrong.amazonaws.com"), ("dbname", "wrong_database"), ("user", "wrong_user"), ("hostaddr", None)])
 def test_actual_target_mismatches_use_existing_verifier(synthetic, capsys, field, value):
     synthetic.change_driver = lambda driver: setattr(driver.info, field, value)
-    assert "actual connection identity" in outcome(synthetic, capsys, 1)
+    assert "FAIL DRIVER_TARGET_MISMATCH" in outcome(synthetic, capsys, 1)
 
 
 @pytest.mark.parametrize("native_mode", ["require", "disable"])
 def test_effective_tls_parameters_must_match(synthetic, capsys, native_mode):
     synthetic.native_mode = native_mode
-    assert "actual connection identity" in outcome(synthetic, capsys, 1)
+    assert "FAIL TLS_POLICY_MISMATCH" in outcome(synthetic, capsys, 1)
 
 
 def test_server_identity_not_just_client_metadata(synthetic, capsys):
@@ -333,7 +333,7 @@ def test_transaction_start_failure_closes_connection(synthetic, capsys, monkeypa
 
 def test_plaintext_native_connection_rejected(synthetic, capsys):
     synthetic.change_driver = lambda driver: setattr(driver.pgconn, "ssl_in_use", False)
-    assert "actual connection identity" in outcome(synthetic, capsys, 1)
+    assert "FAIL TLS_POLICY_MISMATCH" in outcome(synthetic, capsys, 1)
 
 
 def test_native_ca_mismatch_rejected(synthetic, capsys):
@@ -464,3 +464,56 @@ def test_non_inspection_sql_rejected(synthetic):
                     connection.exec_driver_sql(sql)
     finally:
         engine.dispose()
+
+
+@pytest.mark.parametrize('case,code', [
+    ('engine', 'ENGINE_TARGET_MISMATCH'),
+    ('host', 'DRIVER_TARGET_MISMATCH'),
+    ('database', 'DRIVER_TARGET_MISMATCH'),
+    ('user', 'DRIVER_TARGET_MISMATCH'),
+    ('missing_metadata', 'UNSUPPORTED_CONNECTION_METADATA'),
+    ('tls', 'TLS_POLICY_MISMATCH'),
+    ('server', 'SERVER_IDENTITY_MISMATCH'),
+    ('query', 'SERVER_IDENTITY_QUERY_FAILED'),
+    ('timeout', 'IDENTITY_TIMEOUT'),
+    ('unexpected', 'IDENTITY_CHECK_ERROR'),
+])
+def test_identity_diagnostics_are_fixed_and_cleanup_is_preserved(synthetic, capsys, monkeypatch, case, code):
+    if case == 'engine':
+        synthetic.change_engine = lambda engine: setattr(engine, 'url', engine.url.set(database=PRIVATE_MARKER))
+    elif case in {'host', 'database', 'user'}:
+        field = 'dbname' if case == 'database' else case
+        synthetic.change_driver = lambda driver: setattr(driver.info, field, PRIVATE_MARKER)
+    elif case == 'missing_metadata':
+        synthetic.change_driver = lambda driver: delattr(driver.info, 'host')
+    elif case == 'tls':
+        synthetic.native_mode = 'require'
+    elif case == 'server':
+        synthetic.identity = (DB, USER, PRIVATE_MARKER, '203.0.113.10', 5432)
+    elif case == 'unexpected':
+        def change(driver):
+            def broken():
+                raise RuntimeError(PRIVATE_MARKER)
+            driver.info.get_parameters = broken
+        synthetic.change_driver = change
+    else:
+        original = Cursor.execute
+        def execute(cursor, statement, params=None):
+            if 'current_database(), current_user, session_user' in statement:
+                if case == 'timeout':
+                    signal.raise_signal(signal.SIGALRM)
+                raise RuntimeError(PRIVATE_MARKER)
+            return original(cursor, statement, params)
+        monkeypatch.setattr(Cursor, 'execute', execute)
+    output = outcome(synthetic, capsys, 1)
+    assert [line for line in output.splitlines() if line.startswith('FAIL ')] == ['FAIL ' + code]
+    assert all('pg_stat_ssl' not in sql for driver in synthetic.drivers for sql in driver.sql)
+
+
+def test_mutated_diagnostic_cannot_leak_values(synthetic, capsys, monkeypatch):
+    def broken(*_args):
+        error = probe.IdentityVerificationError('DRIVER_TARGET_MISMATCH')
+        error.args = (PRIVATE_MARKER,)
+        raise error
+    monkeypatch.setattr(probe, 'verify_connection_target', broken)
+    assert 'FAIL IDENTITY_CHECK_ERROR' in outcome(synthetic, capsys, 1)
