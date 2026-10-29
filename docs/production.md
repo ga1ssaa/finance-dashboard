@@ -141,7 +141,8 @@ columns; other revisions remain blocked. Frozen historical database test and
 backup fixtures remain scoped to their original approved revisions.
 
 Before approving a real migration: verify the app/add-on identity, exact host,
-database/user, TLS chain, an empty dedicated PostgreSQL 17 database, and review
+database/user, TLS chain, an empty dedicated database (or the exact initial
+extension-view inventory below), and review
 the offline Alembic SQL. Never use the existing `finance_dashboard`, any
 `finance_dashboard_*`, `avero_compose`, template database or local Docker volume.
 
@@ -156,14 +157,126 @@ python -m app.production_migrations --host <approved-provider-host> \
 
 It rejects mismatched targets before connecting; checks server database/user
 identity and non-system relations; locks and applies only the fixed approved
-revision through the same transaction/connection. Existing/nonempty targets are
-refused. Normal online `alembic upgrade`, including caller-provided connections,
+revision through the same transaction/connection. Existing application data or
+any inventory outside the initial-target policy below is refused. Normal online
+`alembic upgrade`, including caller-provided connections,
 is blocked in production without the command's in-process authorization.
 Offline `--sql` remains read-only. Future incremental migrations require a new
 explicitly reviewed procedure; this new-target runner will refuse them.
 Remote online migrations are also rejected when mislabeled as development.
 Alembic tracks both financial/auth metadata and the separate quota metadata, so
 future autogeneration does not treat the security table as an unwanted table.
+
+### PostgreSQL 18.4 and the first Heroku target
+
+Offline review of `0001_infrastructure` through `0005_auth_rate_limits` found no
+known PostgreSQL 18.4 incompatibility: UUID values are supplied by callers,
+NUMERIC(20,8), JSONB, timestamp/date columns and ordinary constraints/indexes use
+supported PostgreSQL syntax. Full-chain SQL generation is tested without a
+connection. This is not a live migration or restore rehearsal; historical
+migrations and frozen PostgreSQL 17 proof fixtures remain unchanged.
+
+The operator's live read-only inspection reported exactly
+`public.pg_stat_statements` and `public.pg_stat_statements_info`, both views and
+exact whole-object members of extension `pg_stat_statements`, version `1.12`,
+with no AVERO name conflicts. These reported identities match PostgreSQL's
+documented statistics views and PostgreSQL 18's upstream default extension
+version. **Provider provenance and unmodified definitions remain UNVERIFIED.**
+This is a narrowly approved catalog compatibility policy, not attestation of
+the provider, extension code or view contents, and not migration approval.
+
+**Initial-target policy:** the preflight and manual migration runner call the
+same `app.initial_database.require_initial_database` validator. It permits:
+
+* Zero counted relations; or
+* Exactly the two named public views above, each a whole-object extension member
+  (`pg_depend` class/refclass match, both subobject IDs zero, dependency `e`),
+  with extension name `pg_stat_statements` and version exactly `1.12`.
+
+If the extension is installed but both views are missing, the empty-target path
+also rejects it. The extension registry must match version `1.12` for the pair.
+Partial pairs, duplicate/malformed metadata, unknown or additional relations,
+wrong versions/membership/types, application tables/views, materialized views,
+sequences, foreign tables and mixed inventories fail closed. A namespace check
+also requires `public` as the only non-system schema, including when otherwise
+empty; it excludes only catalog/toast/temporary system namespaces and does not
+mistake names such as `pgXtest` for system schemas. Names are checked against
+current financial/auth/quota metadata, including table names, primary/unique
+backing indexes, explicit indexes/sequences and Alembic's table/index names.
+The five reviewed upgrades create no object with either approved view name,
+read neither view, and do not alter extensions. No global extension exemption
+exists; an Alembic revision or any application table blocks repeat initialization.
+
+Never drop, relocate, recreate or reset these objects to satisfy the guard.
+Extension membership and version do not detect arbitrary definition tampering by
+a privileged actor. Keep schema-write access controlled and maintenance ON with
+web=0 through the separately authorized migration. Any changed inventory requires
+fresh investigation, not a relaxed policy. This guard is not for incremental upgrades.
+
+Both paths execute their shared fixed catalog queries with `no_parameters=True`:
+otherwise an empty DBAPI parameter mapping makes psycopg parse the literal `%`
+in `NOT LIKE 'pg_%'` as parameter syntax. Regression tests exercise real
+SQLAlchemy/psycopg adaptation. The relation filter and its `_` wildcard remain
+unchanged; the additional explicit namespace check rejects unexpected schemas.
+
+### Separately approved read-only relation identification
+
+For future inventory changes, authorize only a metadata inspection from the
+reviewed Heroku release with maintenance ON and web=0. Reuse the existing
+preflight's production settings, engine factory, TLS/identity verification,
+native read-only initialization, deadline and rollback/close/disposal helpers.
+Do not call the migration runner or Alembic. No new deployment is needed if the
+reviewed query is supplied to the existing read-only one-off harness via stdin.
+
+The prepared query is
+[`backend/verification/heroku_relation_identity.sql`](../backend/verification/heroku_relation_identity.sql).
+It selects only schema/relation kind and names, installed extension/version,
+the exact whole-object `pg_depend` extension membership and an AVERO name-conflict
+flag. It never selects owners, credentials, definitions, statistics query text
+or application rows. It reports provider provenance as **UNVERIFIED**: catalog
+membership cannot prove who installed or later modified an extension.
+
+Bind the conflict-check names from current reviewed metadata rather than records:
+
+```python
+import app.models
+from app.db import Base
+from app.rate_limits import rate_table
+from sqlalchemy import PrimaryKeyConstraint, UniqueConstraint, text
+
+names = {"alembic_version", "alembic_version_pkc"}
+for table in list(Base.metadata.tables.values()) + [rate_table]:
+    names.add(table.name)
+    names.update(index.name for index in table.indexes if index.name)
+    for constraint in table.constraints:
+        if isinstance(constraint, (PrimaryKeyConstraint, UniqueConstraint)):
+            names.add(constraint.name or table.name + "_pkey")
+# Within the already verified read-only connection, using the reviewed query:
+rows = connection.execute(text(sql), {"avero_relation_names": sorted(names)}).all()
+```
+
+Validate and JSON-encode all metadata before displaying it to the authorized
+operator; never interpolate identifiers into SQL or print raw exceptions or
+connection details. Bound the result/output size and fail closed on malformed,
+duplicate or inconsistent membership replies. A metadata conflict flag is not
+an exhaustive safety assessment. Do not read unknown view contents or print
+view definitions, which could contain sensitive literals.
+
+Next gates before the first migration: separately review/approve commit, push,
+CI and deployment of the compatibility patch; preserve maintenance ON/web=0;
+rerun the deployed preflight (including capacity) and verify the actual current
+inventory; review full-chain offline SQL and recovery readiness; then obtain
+separate explicit authorization for the exact target and guarded migration.
+After migration, separately verify the revision/schema and application readiness
+before starting a web dyno or opening traffic. No step is executed by this patch.
+Provider provenance can be investigated with Heroku support; do not represent
+catalog membership as proof. Counts or names alone never authorize migration.
+
+References: [PostgreSQL statistics extension](https://www.postgresql.org/docs/18/pgstatstatements.html),
+[extension dependencies](https://www.postgresql.org/docs/18/catalog-pg-depend.html),
+[Heroku extensions](https://devcenter.heroku.com/articles/heroku-postgres-extensions-postgis-full-text-search),
+[PostgreSQL 18 extension control](https://github.com/postgres/postgres/blob/REL_18_STABLE/contrib/pg_stat_statements/pg_stat_statements.control),
+[SQLAlchemy no_parameters](https://docs.sqlalchemy.org/en/20/core/connections.html#sqlalchemy.engine.Connection.execution_options.params.no_parameters).
 
 ## Backups, recovery and rollback
 
@@ -191,7 +304,7 @@ automatic downgrade or restore in place over the current database.
 
 1. Separate approval for provider resources, domain DNS, config
    secrets, migration and deployment; this phase performs none of those actions.
-2. Confirm plan/credit eligibility, Python-only buildpack, PostgreSQL 17 support,
+2. Confirm plan/credit eligibility, Python-only buildpack, PostgreSQL 18.4 migration compatibility,
    registered-domain DNS/certificates, provider CA verification and the spending cap.
 3. Isolated staging: real TLS, proxy-header contract, browser login/logout and
    refresh, owner-isolated CRUD, shared quota concurrency, small-dyno memory and

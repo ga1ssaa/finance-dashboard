@@ -11,6 +11,8 @@ from types import SimpleNamespace
 
 import psycopg
 from psycopg.types import TypeInfo
+from psycopg._queries import PostgresQuery
+from psycopg.adapt import Transformer
 import pytest
 from sqlalchemy import event
 
@@ -77,8 +79,30 @@ class Cursor:
             row = (case.privileges,)
         elif "to_regclass" in sql:
             row = (case.no_revision,)
-        elif "pg_class c join pg_namespace" in sql:
+        elif "pg_catalog.pg_class c join pg_catalog.pg_namespace" in sql and 'count(*)' in sql:
+            # Real driver adaptation: mocks previously missed the literal-percent error.
+            query = PostgresQuery(Transformer())
+            query.convert(statement, _params)
+            assert _params is None and query.query == statement.encode()
             row = case.relations
+        elif 'from pg_catalog.pg_namespace' in sql:
+            self.rows = case.schemas.copy()
+            self.rowcount = len(self.rows)
+            self.description = [('schema', None, None, None, None, None, None)]
+            return
+        elif 'left join pg_catalog.pg_depend' in sql:
+            query = PostgresQuery(Transformer())
+            query.convert(statement, _params)
+            assert _params is None and query.query == statement.encode()
+            self.rows = case.inventory.copy()
+            self.rowcount = len(self.rows)
+            self.description = [('column_' + str(i), None, None, None, None, None, None) for i in range(6)]
+            return
+        elif 'from pg_catalog.pg_extension' in sql:
+            self.rows = case.extension_versions.copy()
+            self.rowcount = len(self.rows)
+            self.description = [('version', None, None, None, None, None, None)]
+            return
         elif "max_connections" in sql:
             row = case.capacity
         elif "pg_type" in sql:
@@ -95,6 +119,10 @@ class Cursor:
 
     def fetchall(self):
         rows, self.rows = self.rows, []
+        return rows
+
+    def fetchmany(self, size):
+        rows, self.rows = self.rows[:size], self.rows[size:]
         return rows
 
     def close(self):
@@ -159,7 +187,8 @@ def synthetic(tmp_path, monkeypatch):
     case = SimpleNamespace(ca=str(ca), settings=settings, engines=[], disposed=[], drivers=[],
         version="180004", readonly="on", privileges=True, no_revision=True,
         identity=(DB, USER, USER, "203.0.113.10", 5432), server_inet=None, tls_row=(True, "TLSv1.3"),
-        relations=(0, 0), capacity=(97, -1, 1), native_mode="verify-full", query_error=None,
+        relations=(0, 0), schemas=[('public',)], inventory=[], extension_versions=[],
+        capacity=(97, -1, 1), native_mode="verify-full", query_error=None,
         connect_error=None, dispose_error=False, rollback_error=False, close_error=False,
         change_driver=lambda _driver: None, change_engine=lambda _engine: None)
     factory = probe.create_database_engine
@@ -561,3 +590,28 @@ def test_server_diagnostics_never_expose_values_and_stop_inspection(synthetic, c
     output = outcome(synthetic, capsys, 1)
     assert [line for line in output.splitlines() if line.startswith('FAIL ')] == ['FAIL ' + code]
     assert all('pg_stat_ssl' not in sql for sql in synthetic.drivers[0].sql)
+
+
+def test_literal_percent_regression_uses_real_psycopg_adapter():
+    query = PostgresQuery(Transformer())
+    with pytest.raises(psycopg.ProgrammingError):
+        query.convert(probe.RELATIONS_SQL, {})
+    query.convert(probe.RELATIONS_SQL, None)
+    assert query.query.decode() == probe.RELATIONS_SQL
+
+
+@pytest.mark.parametrize('relations', [
+    [('v', 'public', 'pg_stat_statements'), ('v', 'public', 'pg_stat_statements')],
+    [('v', 'public', 'unknown_extension')],
+    [('v', 'public', None)],
+    [('r', 'public', None)],
+    [('S', 'public', None)],
+    [('v', 'public', 'pg_stat_statements'), ('r', 'public', None)],
+    [('v', 'unexpected_schema', 'pg_stat_statements')],
+], ids=['documented-extension-fixture', 'unknown-extension', 'application-view',
+        'table', 'sequence', 'mixed-provider-application', 'unexpected-schema'])
+def test_aggregate_counts_alone_never_authorize_an_exception(synthetic, capsys, relations):
+    # Counts without the exact approved metadata still grant no exemption.
+    synthetic.relations = (len(relations), sum(extension is not None for _, _, extension in relations))
+    assert 'FAIL empty target or approved initial extension views' in outcome(synthetic, capsys, 1)
+    assert all('max_connections' not in sql for sql in synthetic.drivers[0].sql)

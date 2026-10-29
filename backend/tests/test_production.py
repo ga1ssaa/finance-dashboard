@@ -261,6 +261,20 @@ def synthetic_migration_engine():
     info.get_parameters.return_value = {'sslmode': 'verify-full', 'sslrootcert': '/synthetic/approved-ca.pem'}
     cursor = connection.connection.driver_connection.cursor.return_value.__enter__.return_value
     cursor.fetchone.return_value = (DB, 'synthetic', 'synthetic', '203.0.113.10', 5432)
+    def inspect(sql, **kwargs):
+        from app.initial_database import RELATIONS_SQL, SCHEMAS_SQL, EXTENSION_VERSION_SQL
+        assert kwargs == {'execution_options': {'no_parameters': True}}
+        result = MagicMock()
+        if sql == RELATIONS_SQL:
+            result.fetchmany.return_value = [(connection.scalar.return_value, 0)]
+        elif sql == SCHEMAS_SQL:
+            result.fetchmany.return_value = [('public',)]
+        elif sql == EXTENSION_VERSION_SQL:
+            result.fetchmany.return_value = []
+        else:
+            raise AssertionError('Unexpected initial-target query')
+        return result
+    connection.exec_driver_sql.side_effect = inspect
     return engine, connection
 
 

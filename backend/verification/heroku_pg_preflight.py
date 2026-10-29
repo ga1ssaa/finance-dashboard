@@ -23,6 +23,7 @@ from sqlalchemy import event
 
 from app.config import Settings
 from app.db import create_database_engine
+from app.initial_database import RELATIONS_SQL, require_initial_database
 from app.production import require_heroku
 from app.production_migrations import IdentityVerificationError, checked_target, verify_connection_target
 
@@ -32,17 +33,6 @@ TIMEOUT_SECONDS = 45
 CLEANUP_SECONDS = 5
 ESSENTIAL_CONNECTION_LIMIT = 20
 MIN_SPARE_CONNECTIONS = 4  # Three application slots and one administrative slot.
-
-RELATIONS_SQL = """
-SELECT count(*), count(*) FILTER (WHERE EXISTS (
-    SELECT 1 FROM pg_depend d
-    WHERE d.classid = 'pg_class'::regclass AND d.objid = c.oid
-      AND d.refclassid = 'pg_extension'::regclass AND d.deptype = 'e'))
-FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
-WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
-  AND n.nspname NOT LIKE 'pg_%'
-  AND c.relkind IN ('r','p','v','m','S','f')
-"""  # Same relation scope as the production migration runner; do not exempt extensions.
 
 CAPACITY_SQL = """
 SELECT current_setting('max_connections')::int
@@ -174,10 +164,9 @@ def _inspect(arm_cleanup):
             "SELECT to_regclass('public.alembic_version') IS NULL").scalar_one() is True)
         print("PASS no Alembic revision table")
 
-        stage = "empty target including provider relations"
-        total, extensions = connection.exec_driver_sql(RELATIONS_SQL).one()
-        _require(type(total) is int and type(extensions) is int and total == extensions == 0)
-        print("PASS migration runner empty-target requirement")
+        stage = "empty target or approved initial extension views"
+        require_initial_database(connection)
+        print("PASS migration runner initial-target requirement")
 
         stage = "connection capacity snapshot"
         server_free, role_limit, role_used = connection.exec_driver_sql(CAPACITY_SQL).one()

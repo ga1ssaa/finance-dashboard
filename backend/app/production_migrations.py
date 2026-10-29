@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import URL, make_url
 from app.config import Settings
 from app.db import create_database_engine
+from app.initial_database import require_initial_database
 from app.production import require_heroku
 from app.rate_limits import PRODUCTION_REVISION
 
@@ -169,11 +170,7 @@ def migrate_new_database(settings, host, database, confirmation, *, environ=None
             url = make_url(settings.database_url.get_secret_value())
             if tuple(identity) != (database, url.username):
                 raise RuntimeError("Production database identity mismatch")
-            existing = connection.scalar(text("""SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-                WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname NOT LIKE 'pg_%'
-                AND c.relkind IN ('r','p','v','m','S','f')"""))
-            if existing != 0:
-                raise RuntimeError("Refusing migration: target is not a new empty database")
+            require_initial_database(connection)
             config = Config(str(config_path or Path.cwd() / "backend/alembic.ini"))
             config.attributes.update(connection=connection, production_authorization=AUTHORIZATION)
             command.upgrade(config, PRODUCTION_REVISION)
