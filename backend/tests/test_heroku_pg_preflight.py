@@ -3,6 +3,7 @@
 import logging
 from contextlib import contextmanager
 from pathlib import Path
+from ipaddress import ip_interface
 import signal
 import threading
 import time
@@ -56,6 +57,16 @@ class Cursor:
             row = (case.readonly,)
         elif "current_database(), current_user, session_user" in sql:
             row = case.identity
+            if case.server_inet is not None:
+                # Model PostgreSQL's documented host(inet) versus inet::text output.
+                address = ip_interface(case.server_inet)
+                if 'pg_catalog.host(inet_server_addr())' in sql:
+                    server = str(address.ip)
+                elif 'inet_server_addr()::text' in sql:
+                    server = str(address)
+                else:
+                    raise AssertionError('Unexpected server-address expression')
+                row = (*row[:3], server, row[4])
         elif "pg_stat_ssl" in sql:
             if case.query_error:
                 raise case.query_error
@@ -77,7 +88,7 @@ class Cursor:
         self.rows = [row]
         self.rowcount = 1
         self.description = [("column_" + str(i), None, None, None, None, None, None)
-                            for i in range(len(row))]
+                            for i in range(len(row) if isinstance(row, (tuple, list)) else 0)]
 
     def fetchone(self):
         return self.rows.pop(0) if self.rows else None
@@ -147,7 +158,7 @@ def synthetic(tmp_path, monkeypatch):
         DATABASE_SSLROOTCERT=str(ca))
     case = SimpleNamespace(ca=str(ca), settings=settings, engines=[], disposed=[], drivers=[],
         version="180004", readonly="on", privileges=True, no_revision=True,
-        identity=(DB, USER, USER, "203.0.113.10", 5432), tls_row=(True, "TLSv1.3"),
+        identity=(DB, USER, USER, "203.0.113.10", 5432), server_inet=None, tls_row=(True, "TLSv1.3"),
         relations=(0, 0), capacity=(97, -1, 1), native_mode="verify-full", query_error=None,
         connect_error=None, dispose_error=False, rollback_error=False, close_error=False,
         change_driver=lambda _driver: None, change_engine=lambda _engine: None)
@@ -473,7 +484,7 @@ def test_non_inspection_sql_rejected(synthetic):
     ('user', 'DRIVER_TARGET_MISMATCH'),
     ('missing_metadata', 'UNSUPPORTED_CONNECTION_METADATA'),
     ('tls', 'TLS_POLICY_MISMATCH'),
-    ('server', 'SERVER_IDENTITY_MISMATCH'),
+    ('server', 'SERVER_SESSION_USER_MISMATCH'),
     ('query', 'SERVER_IDENTITY_QUERY_FAILED'),
     ('timeout', 'IDENTITY_TIMEOUT'),
     ('unexpected', 'IDENTITY_CHECK_ERROR'),
@@ -517,3 +528,36 @@ def test_mutated_diagnostic_cannot_leak_values(synthetic, capsys, monkeypatch):
         raise error
     monkeypatch.setattr(probe, 'verify_connection_target', broken)
     assert 'FAIL IDENTITY_CHECK_ERROR' in outcome(synthetic, capsys, 1)
+
+
+@pytest.mark.parametrize('server_inet', ['203.0.113.10/32', '10.0.0.12/32', '2001:db8::1/128'])
+def test_postgres_inet_masks_are_formatted_by_host_in_readonly_query(synthetic, capsys, server_inet):
+    synthetic.server_inet = server_inet
+    outcome(synthetic, capsys, 0)
+    identity_sql = [sql for sql in synthetic.drivers[0].sql
+                    if 'current_database(), current_user, session_user' in sql]
+    assert identity_sql == ['SELECT current_database(), current_user, session_user, '
+                            'pg_catalog.host(inet_server_addr()), inet_server_port()']
+
+
+@pytest.mark.parametrize('row,code', [
+    (None, 'SERVER_IDENTITY_QUERY_INVALID'),
+    ((), 'SERVER_IDENTITY_QUERY_INVALID'),
+    ((DB, USER, USER, '203.0.113.10'), 'SERVER_IDENTITY_QUERY_INVALID'),
+    ((DB, USER, USER, '203.0.113.10', 5432, PRIVATE_MARKER), 'SERVER_IDENTITY_QUERY_INVALID'),
+    (1, 'SERVER_IDENTITY_QUERY_INVALID'),
+    ((PRIVATE_MARKER, USER, USER, '203.0.113.10', 5432), 'SERVER_DATABASE_MISMATCH'),
+    ((DB, PRIVATE_MARKER, USER, '203.0.113.10', 5432), 'SERVER_CURRENT_USER_MISMATCH'),
+    ((DB, USER, PRIVATE_MARKER, '203.0.113.10', 5432), 'SERVER_SESSION_USER_MISMATCH'),
+    ((DB, USER, USER, '203.0.113.10', None), 'SERVER_PORT_INVALID'),
+    ((DB, USER, USER, '203.0.113.10', '5432'), 'SERVER_PORT_INVALID'),
+    ((DB, USER, USER, None, 5432), 'SERVER_ADDRESS_INVALID'),
+    ((DB, USER, USER, PRIVATE_MARKER, 5432), 'SERVER_ADDRESS_INVALID'),
+    ((DB, USER, USER, '203.0.113.10/32', 5432), 'SERVER_ADDRESS_INVALID'),
+    ((DB, USER, USER, '2001:db8::1/128', 5432), 'SERVER_ADDRESS_INVALID'),
+])
+def test_server_diagnostics_never_expose_values_and_stop_inspection(synthetic, capsys, row, code):
+    synthetic.identity = row
+    output = outcome(synthetic, capsys, 1)
+    assert [line for line in output.splitlines() if line.startswith('FAIL ')] == ['FAIL ' + code]
+    assert all('pg_stat_ssl' not in sql for sql in synthetic.drivers[0].sql)

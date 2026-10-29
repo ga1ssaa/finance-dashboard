@@ -192,11 +192,15 @@ DIAGNOSTIC_CASES = [
     ('tls_missing_ca', 'TLS_POLICY_MISMATCH'),
     ('tls_plaintext', 'TLS_POLICY_MISMATCH'),
     ('missing_parameters', 'UNSUPPORTED_CONNECTION_METADATA'),
-    ('server_database', 'SERVER_IDENTITY_MISMATCH'),
-    ('server_user', 'SERVER_IDENTITY_MISMATCH'),
-    ('session_user', 'SERVER_IDENTITY_MISMATCH'),
-    ('server_address', 'SERVER_IDENTITY_MISMATCH'),
-    ('server_port', 'SERVER_IDENTITY_MISMATCH'),
+    ('server_database', 'SERVER_DATABASE_MISMATCH'),
+    ('server_user', 'SERVER_CURRENT_USER_MISMATCH'),
+    ('session_user', 'SERVER_SESSION_USER_MISMATCH'),
+    ('server_address', 'SERVER_ADDRESS_INVALID'),
+    ('server_port', 'SERVER_PORT_INVALID'),
+    ('missing_row', 'SERVER_IDENTITY_QUERY_INVALID'),
+    ('short_row', 'SERVER_IDENTITY_QUERY_INVALID'),
+    ('long_row', 'SERVER_IDENTITY_QUERY_INVALID'),
+    ('non_sequence_row', 'SERVER_IDENTITY_QUERY_INVALID'),
     ('query', 'SERVER_IDENTITY_QUERY_FAILED'),
     ('fetch', 'SERVER_IDENTITY_QUERY_FAILED'),
     ('cursor_close', 'SERVER_IDENTITY_QUERY_FAILED'),
@@ -245,6 +249,14 @@ def diagnostic_failure(case, connection, driver, cursor):
         def broken():
             raise TimeoutError(private) if case == 'metadata_timeout' else RuntimeError(private)
         driver.info.get_parameters = broken
+    elif case == 'missing_row':
+        cursor.fetchone.return_value = None
+    elif case == 'short_row':
+        cursor.fetchone.return_value = cursor.fetchone.return_value[:4]
+    elif case == 'long_row':
+        cursor.fetchone.return_value += (private,)
+    elif case == 'non_sequence_row':
+        cursor.fetchone.return_value = 1
     else:
         raise AssertionError('Unknown synthetic case')
 
@@ -287,7 +299,9 @@ def test_fixed_diagnostics_block_authorization_and_runner(monkeypatch, case, cod
 def test_diagnostic_allowlist_is_exact_and_error_output_revalidates():
     assert IDENTITY_FAILURE_CODES == {
         'ENGINE_TARGET_MISMATCH', 'DRIVER_TARGET_MISMATCH', 'TLS_POLICY_MISMATCH',
-        'SERVER_IDENTITY_MISMATCH', 'UNSUPPORTED_CONNECTION_METADATA',
+        'SERVER_IDENTITY_QUERY_INVALID', 'SERVER_DATABASE_MISMATCH',
+        'SERVER_CURRENT_USER_MISMATCH', 'SERVER_SESSION_USER_MISMATCH',
+        'SERVER_PORT_INVALID', 'SERVER_ADDRESS_INVALID', 'UNSUPPORTED_CONNECTION_METADATA',
         'SERVER_IDENTITY_QUERY_FAILED', 'IDENTITY_TIMEOUT', 'IDENTITY_CHECK_ERROR',
     }
     for value in ['unapproved-private-marker', None, {}, ['private']]:
@@ -295,3 +309,69 @@ def test_diagnostic_allowlist_is_exact_and_error_output_revalidates():
         assert error.code == str(error) == 'IDENTITY_CHECK_ERROR'
     error.args = ('unapproved-private-marker',)
     assert error.code == str(error) == 'IDENTITY_CHECK_ERROR'
+
+
+@pytest.mark.parametrize('address', ['203.0.113.10/32', '10.0.0.12/32', '2001:db8::1/128'])
+def test_identity_query_uses_host_only_address_for_postgres_inet(address):
+    from ipaddress import ip_interface
+    connection, driver, cursor = synthetic_connection(REMOTE)
+    original = cursor.fetchone.return_value
+
+    def reply(statement):
+        assert statement == ('SELECT current_database(), current_user, session_user, '
+                             'pg_catalog.host(inet_server_addr()), inet_server_port()')
+        # Synthetic SQL result per PostgreSQL host(inet) documentation, no SQL execution.
+        cursor.fetchone.return_value = (*original[:3], str(ip_interface(address).ip), original[4])
+
+    cursor.execute.side_effect = reply
+    require_authorization(settings(REMOTE, 'production'), config_for(connection, authorized=True))
+    cursor.execute.assert_called_once()
+    driver.commit.assert_not_called(); driver.rollback.assert_not_called()
+
+
+@pytest.mark.parametrize('index,value,code', [
+    (0, None, 'SERVER_DATABASE_MISMATCH'),
+    (1, None, 'SERVER_CURRENT_USER_MISMATCH'),
+    (2, None, 'SERVER_SESSION_USER_MISMATCH'),
+    (3, None, 'SERVER_ADDRESS_INVALID'),
+    (3, '', 'SERVER_ADDRESS_INVALID'),
+    (3, '203.0.113.10/32', 'SERVER_ADDRESS_INVALID'),
+    (3, '2001:db8::1/128', 'SERVER_ADDRESS_INVALID'),
+    (4, None, 'SERVER_PORT_INVALID'),
+    (4, '5432', 'SERVER_PORT_INVALID'),
+    (4, True, 'SERVER_PORT_INVALID'),
+    (4, 0, 'SERVER_PORT_INVALID'),
+    (4, 65536, 'SERVER_PORT_INVALID'),
+])
+def test_invalid_server_fields_still_block_authorization(index, value, code):
+    connection, driver, cursor = synthetic_connection(REMOTE)
+    row = list(cursor.fetchone.return_value)
+    row[index] = value
+    cursor.fetchone.return_value = tuple(row)
+    with pytest.raises(IdentityVerificationError) as error:
+        require_authorization(settings(REMOTE, 'production'), config_for(connection, authorized=True))
+    assert error.value.code == code
+    connection.execute.assert_not_called()
+    driver.commit.assert_not_called(); driver.rollback.assert_not_called()
+
+
+@pytest.mark.parametrize('url,address', [
+    (LOCAL, '127.0.0.1'),
+    (LOCAL.replace('127.0.0.1', '[::1]'), '::1'),
+    (REMOTE, '10.0.0.12'),
+    (REMOTE, '2001:db8::1'),
+])
+def test_valid_host_only_server_addresses_keep_existing_target_rules(url, address):
+    connection, _, cursor = synthetic_connection(url)
+    original = cursor.fetchone.return_value
+    cursor.fetchone.return_value = (*original[:3], address, original[4])
+    mode = 'production' if url == REMOTE else 'development'
+    require_authorization(settings(url, mode), config_for(connection, authorized=mode == 'production'))
+
+
+def test_local_target_cannot_accept_a_public_server_address():
+    connection, _, cursor = synthetic_connection()
+    original = cursor.fetchone.return_value
+    cursor.fetchone.return_value = (*original[:3], '203.0.113.10', original[4])
+    with pytest.raises(IdentityVerificationError, match='^SERVER_ADDRESS_INVALID$'):
+        require_authorization(settings(), config_for(connection))

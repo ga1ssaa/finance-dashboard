@@ -18,7 +18,9 @@ LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "postgres"}
 PRIVATE_NETWORKS = tuple(ip_network(value) for value in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7"))
 IDENTITY_FAILURE_CODES = frozenset({
     "ENGINE_TARGET_MISMATCH", "DRIVER_TARGET_MISMATCH", "TLS_POLICY_MISMATCH",
-    "SERVER_IDENTITY_MISMATCH", "UNSUPPORTED_CONNECTION_METADATA",
+    "SERVER_IDENTITY_QUERY_INVALID", "SERVER_DATABASE_MISMATCH",
+    "SERVER_CURRENT_USER_MISMATCH", "SERVER_SESSION_USER_MISMATCH",
+    "SERVER_PORT_INVALID", "SERVER_ADDRESS_INVALID", "UNSUPPORTED_CONNECTION_METADATA",
     "SERVER_IDENTITY_QUERY_FAILED", "IDENTITY_TIMEOUT", "IDENTITY_CHECK_ERROR",
 })
 
@@ -90,22 +92,37 @@ def verify_connection_target(settings, connection, target):
                 raise IdentityVerificationError("TLS_POLICY_MISMATCH")
         try:
             with driver.cursor() as cursor:
-                cursor.execute("SELECT current_database(), current_user, session_user, inet_server_addr()::text, inet_server_port()")
+                # inet::text includes a netmask; host() returns an address for ip_address().
+                cursor.execute("SELECT current_database(), current_user, session_user, pg_catalog.host(inet_server_addr()), inet_server_port()")
                 row = cursor.fetchone()
         except TimeoutError:
             raise
         except Exception:
             raise IdentityVerificationError("SERVER_IDENTITY_QUERY_FAILED") from None
-        if (not row or len(row) != 5 or tuple(row[:3]) != (target.database, target.username, target.username)
-            or type(row[4]) is not int or not 1 <= row[4] <= 65535):
-            raise IdentityVerificationError("SERVER_IDENTITY_MISMATCH")
         try:
-            server = ip_address(row[3])
-        except ValueError:
-            raise IdentityVerificationError("SERVER_IDENTITY_MISMATCH") from None
+            if not row or len(row) != 5:
+                raise IdentityVerificationError("SERVER_IDENTITY_QUERY_INVALID")
+            identity = tuple(row[:3])
+            server_value, server_port = row[3], row[4]
+            if len(identity) != 3:
+                raise IdentityVerificationError("SERVER_IDENTITY_QUERY_INVALID")
+        except (TypeError, IndexError, KeyError):
+            raise IdentityVerificationError("SERVER_IDENTITY_QUERY_INVALID") from None
+        if identity[0] != target.database:
+            raise IdentityVerificationError("SERVER_DATABASE_MISMATCH")
+        if identity[1] != target.username:
+            raise IdentityVerificationError("SERVER_CURRENT_USER_MISMATCH")
+        if identity[2] != target.username:
+            raise IdentityVerificationError("SERVER_SESSION_USER_MISMATCH")
+        if type(server_port) is not int or not 1 <= server_port <= 65535:
+            raise IdentityVerificationError("SERVER_PORT_INVALID")
+        try:
+            server = ip_address(server_value)
+        except (ValueError, TypeError):
+            raise IdentityVerificationError("SERVER_ADDRESS_INVALID") from None
         # Local Docker may publish 5434 while PostgreSQL reports its private IP/5432.
         if target.host in LOCAL_HOSTS and not (server.is_loopback or any(server in network for network in PRIVATE_NETWORKS)):
-            raise IdentityVerificationError("SERVER_IDENTITY_MISMATCH")
+            raise IdentityVerificationError("SERVER_ADDRESS_INVALID")
     except IdentityVerificationError:
         raise
     except TimeoutError:
