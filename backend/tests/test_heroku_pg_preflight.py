@@ -17,6 +17,7 @@ import pytest
 from sqlalchemy import event
 
 from app.config import Settings
+from app.initial_database import PUBLIC_READY_SQL, SCHEMAS_SQL
 from verification import heroku_pg_preflight as probe
 
 PRIVATE_MARKER = "synthetic-private-details-must-not-appear"
@@ -47,7 +48,31 @@ class Cursor:
             driver.info.transaction_status = 2
         driver.sql.append(statement)
         sql = " ".join(statement.lower().split())
-        if "pg_catalog.version()" in sql:
+        if statement == PUBLIC_READY_SQL:
+            row = (case.privileges if case.public_path else False,)
+        elif statement == SCHEMAS_SQL:
+            provider = case.provider
+            protected = (provider.owner_exists and not provider.owner_member and not provider.owner_admin and not provider.can_create
+                         and not provider.owns_routine and not provider.routine_admin and not provider.owns_type
+                         and not provider.type_admin and not provider.owns_relation and not provider.relation_admin)
+            self.rows = [tuple(row) if len(row) != 1 else (row[0], row[0] == 'public' or row[0] == '_heroku' and protected)
+                         for row in case.schemas]
+            self.rowcount = len(self.rows)
+            self.description = [(name, None, None, None, None, None, None) for name in ('schema','protected')]
+            return
+        elif "table_names" in (_params or {}):
+            query = PostgresQuery(Transformer())
+            query.convert(statement, _params)
+            assert set(_params) == {'relation_names', 'table_names'}
+            # SQLAlchemy naming conventions may supply str subclasses (conv).
+            # The real psycopg adapter above must accept those identifiers too.
+            assert all(type(value) is list and all(isinstance(name, str) for name in value) for value in _params.values())
+            conflict = case.conflict
+            if conflict is False:
+                conflict = any(len(row) == 6 and row[0] == 'public' and row[1] in _params['relation_names']
+                               for row in case.inventory)
+            row = (conflict,)
+        elif "pg_catalog.version()" in sql:
             row = ("PostgreSQL 18.4 on synthetic",)
         elif "current_schema()" in sql:
             row = ("public",)
@@ -84,7 +109,7 @@ class Cursor:
             query = PostgresQuery(Transformer())
             query.convert(statement, _params)
             assert _params is None and query.query == statement.encode()
-            row = case.relations
+            row = case.relations if case.no_revision else (case.relations[0] + 1, case.relations[1])
         elif 'from pg_catalog.pg_namespace' in sql:
             self.rows = case.schemas.copy()
             self.rowcount = len(self.rows)
@@ -185,7 +210,10 @@ def synthetic(tmp_path, monkeypatch):
         PRODUCTION_DATABASE_HOST=HOST, PRODUCTION_DATABASE_NAME=DB,
         DATABASE_SSLROOTCERT=str(ca))
     case = SimpleNamespace(ca=str(ca), settings=settings, engines=[], disposed=[], drivers=[],
-        version="180004", readonly="on", privileges=True, no_revision=True,
+        version="180004", readonly="on", privileges=True, no_revision=True, public_path=True, conflict=False,
+        provider=SimpleNamespace(owner_exists=True, owner_member=False, owner_admin=False, can_create=False,
+                                 owns_routine=False, routine_admin=False, owns_type=False, type_admin=False,
+                                 owns_relation=False, relation_admin=False),
         identity=(DB, USER, USER, "203.0.113.10", 5432), server_inet=None, tls_row=(True, "TLSv1.3"),
         relations=(0, 0), schemas=[('public',)], inventory=[], extension_versions=[],
         capacity=(97, -1, 1), native_mode="verify-full", query_error=None,
@@ -264,16 +292,15 @@ def test_valid_probe_uses_real_dialect_and_readonly_before_initialization(synthe
 
 @pytest.mark.parametrize("field,value,stage", [
     ("version", "170000", "PostgreSQL version"),
-    ("version", "180003", "PostgreSQL version"),
-    ("version", "180006", "PostgreSQL version"),
+    ("version", "190000", "PostgreSQL version"),
     ("version", None, "PostgreSQL version"),
     ("readonly", "off", "read-only initialization"),
-    ("privileges", False, "schema privileges"),
-    ("privileges", None, "schema privileges"),
-    ("no_revision", False, "Alembic state"),
-    ("relations", (1, 0), "empty target"),
-    ("relations", (2, 2), "empty target"),
-    ("relations", (None, 0), "empty target"),
+    ("privileges", False, "INITIAL_PUBLIC_SCHEMA_NOT_READY"),
+    ("privileges", None, "INITIAL_PUBLIC_SCHEMA_NOT_READY"),
+    ("no_revision", False, "INITIAL_COUNTS_NOT_APPROVED"),
+    ("relations", (1, 0), "INITIAL_COUNTS_NOT_APPROVED"),
+    ("relations", (2, 2), "INITIAL_EXTENSION_VERSION_NOT_APPROVED"),
+    ("relations", (None, 0), "INITIAL_COUNTS_RESULT_INVALID"),
     ("capacity", (3, -1, 1), "capacity snapshot"),
     ("capacity", (97, -1, 17), "capacity snapshot"),
     ("capacity", (97, 4, 1), "capacity snapshot"),
@@ -613,5 +640,5 @@ def test_literal_percent_regression_uses_real_psycopg_adapter():
 def test_aggregate_counts_alone_never_authorize_an_exception(synthetic, capsys, relations):
     # Counts without the exact approved metadata still grant no exemption.
     synthetic.relations = (len(relations), sum(extension is not None for _, _, extension in relations))
-    assert 'FAIL empty target or approved initial extension views' in outcome(synthetic, capsys, 1)
+    assert 'FAIL INITIAL_' in outcome(synthetic, capsys, 1)
     assert all('max_connections' not in sql for sql in synthetic.drivers[0].sql)

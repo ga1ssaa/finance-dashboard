@@ -64,8 +64,8 @@ host. Startup requires a web dyno, the CA bundle, one Uvicorn worker, disabled
 blanket proxy-header trust/access logging, and bounded concurrency (16 requests).
 Password hashing/verification shares a two-slot semaphore (64 MiB Argon2 per
 slot); hashing parameters, token lifetime, rotation/replay detection, session
-revocation and account ownership remain unchanged. Load/memory testing on the
-actual Basic dyno remains a pre-launch requirement.
+revocation and account ownership remain unchanged. Check memory during the initial synthetic smoke test on
+Basic; keep the existing one-worker/concurrency limits.
 
 Production SQLAlchemy uses three connections, no overflow, short checkout/connect
 timeouts, recycling and a fixed public-schema search path. Reserve remaining connections for backups, a separately
@@ -167,120 +167,170 @@ Remote online migrations are also rejected when mislabeled as development.
 Alembic tracks both financial/auth metadata and the separate quota metadata, so
 future autogeneration does not treat the security table as an unwanted table.
 
-### PostgreSQL 18.4 and the first Heroku target
+### Initial production compatibility policy
 
-Offline review of `0001_infrastructure` through `0005_auth_rate_limits` found no
-known PostgreSQL 18.4 incompatibility: UUID values are supplied by callers,
-NUMERIC(20,8), JSONB, timestamp/date columns and ordinary constraints/indexes use
-supported PostgreSQL syntax. Full-chain SQL generation is tested without a
-connection. This is not a live migration or restore rehearsal; historical
-migrations and frozen PostgreSQL 17 proof fixtures remain unchanged.
+`0001_infrastructure` through `0005_auth_rate_limits` create ten application
+tables plus `public.alembic_version` and their indexes/constraints. The upgrades
+create no schemas, functions, extensions or event triggers, and do not alter
+existing financial records. UUID, NUMERIC(20,8), JSONB, timestamp/date and index
+SQL is supported by PostgreSQL 18; the full chain is generated and checked
+offline. The preflight accepts PostgreSQL 18 minor updates, not unknown majors.
+No live migration is claimed by these tests.
 
-The operator's live read-only inspection reported exactly
-`public.pg_stat_statements` and `public.pg_stat_statements_info`, both views and
-exact whole-object members of extension `pg_stat_statements`, version `1.12`,
-with no AVERO name conflicts. These reported identities match PostgreSQL's
-documented statistics views and PostgreSQL 18's upstream default extension
-version. **Provider provenance and unmodified definitions remain UNVERIFIED.**
-This is a narrowly approved catalog compatibility policy, not attestation of
-the provider, extension code or view contents, and not migration approval.
+The preflight and authorized migration runner use the same
+`app.initial_database.require_initial_database` policy:
 
-**Initial-target policy:** the preflight and manual migration runner call the
-same `app.initial_database.require_initial_database` validator. It permits:
+* `public` must exist with USAGE and CREATE privileges. The effective explicit
+  search path must be exactly `public`, matching the production engine options.
+* Other non-system schemas are rejected except the exact `_heroku` namespace.
+  Heroku documents it as internal infrastructure on Essential databases. It is
+  permitted only if its owner resolves to a role the application is **not a
+  member of or administrator of**, the application has **no CREATE** privilege
+  there, and the application is not a member or administrator of any role owning
+  relations, routines or types there. Membership is checked even if a grant is
+  not inherited; ADMIN OPTION is checked because it can confer membership. Missing/NULL
+  or malformed metadata fails closed. These checks include application-owned
+  objects and objects owned by roles the application could assume.
+* This trusts the documented provider boundary in the newly provisioned Heroku
+  database. It does not claim to authenticate the provider's role by its name or
+  audit provider routine bodies. A different owner alone is insufficient. The
+  reported count of 14 is **not** an acceptance condition. Trigger-name syntax,
+  routine signatures and exhaustive internal inventories are not launch gates.
+* The relation filter still covers `_heroku`: no schema exemption is added to
+  the relation count. Across all non-system schemas, zero counted relations OR
+  exactly `public.pg_stat_statements` and `public.pg_stat_statements_info` are
+  allowed. Both must be views and exact whole-object extension members of
+  `pg_stat_statements`, version `1.12`. Partial pairs, extra/unknown tables,
+  views, materialized views, sequences, partitioned/foreign tables, wrong
+  versions/membership, and existing application/Alembic tables are rejected.
+  An installed statistics extension with both views missing is also rejected.
+* Actual `public` relation names (all relation kinds, including indexes and
+  composite relations) and type names are checked against the reviewed migration
+  footprint using bound parameters. This rejects standalone domains/composite
+  types that would collide with an application table even when no tables exist.
+  The generated DDL tests cover every table and named backing index/constraint.
 
-* Zero counted relations; or
-* Exactly the two named public views above, each a whole-object extension member
-  (`pg_depend` class/refclass match, both subobject IDs zero, dependency `e`),
-  with extension name `pg_stat_statements` and version exactly `1.12`.
+AVERO never adds `_heroku` to its search path, reads its application data, or
+alters/drops/moves its objects. Provider DDL event triggers may fire normally
+when PostgreSQL processes migrations; they are part of the trusted Heroku
+platform and are not disabled or rewritten. This policy is an initial-target
+check, not an exhaustive database-content audit or permission to upgrade an
+existing application database.
 
-If the extension is installed but both views are missing, the empty-target path
-also rejects it. The extension registry must match version `1.12` for the pair.
-Partial pairs, duplicate/malformed metadata, unknown or additional relations,
-wrong versions/membership/types, application tables/views, materialized views,
-sequences, foreign tables and mixed inventories fail closed. A namespace check
-also requires `public` as the only non-system schema, including when otherwise
-empty; it excludes only catalog/toast/temporary system namespaces and does not
-mistake names such as `pgXtest` for system schemas. Names are checked against
-current financial/auth/quota metadata, including table names, primary/unique
-backing indexes, explicit indexes/sequences and Alembic's table/index names.
-The five reviewed upgrades create no object with either approved view name,
-read neither view, and do not alter extensions. No global extension exemption
-exists; an Alembic revision or any application table blocks repeat initialization.
+The preflight retains production configuration, CA availability, native read-only
+initialization, actual connection identity, verify-full/TLS 1.2+, PostgreSQL 18
+compatibility, shared target readiness and a small connection-capacity snapshot.
+The shared guard includes privilege/conflict/Alembic-state rejection, so separate
+duplicate checks are unnecessary. Fixed failure codes suppress database values.
+The old temporary inventory/trigger parsers are not part of the release path.
 
-Never drop, relocate, recreate or reset these objects to satisfy the guard.
-Extension membership and version do not detect arbitrary definition tampering by
-a privileged actor. Keep schema-write access controlled and maintenance ON with
-web=0 through the separately authorized migration. Any changed inventory requires
-fresh investigation, not a relaxed policy. This guard is not for incremental upgrades.
+Fixed raw catalog queries retain `no_parameters=True` for psycopg's literal
+percent handling. Name-conflict queries use compiled SQLAlchemy `text()` with
+bound arrays; identifiers are never interpolated into SQL.
 
-Both paths execute their shared fixed catalog queries with `no_parameters=True`:
-otherwise an empty DBAPI parameter mapping makes psycopg parse the literal `%`
-in `NOT LIKE 'pg_%'` as parameter syntax. Regression tests exercise real
-SQLAlchemy/psycopg adaptation. The relation filter and its `_` wildcard remain
-unchanged; the additional explicit namespace check rejects unexpected schemas.
-
-### Separately approved read-only relation identification
-
-For future inventory changes, authorize only a metadata inspection from the
-reviewed Heroku release with maintenance ON and web=0. Reuse the existing
-preflight's production settings, engine factory, TLS/identity verification,
-native read-only initialization, deadline and rollback/close/disposal helpers.
-Do not call the migration runner or Alembic. No new deployment is needed if the
-reviewed query is supplied to the existing read-only one-off harness via stdin.
-
-The prepared query is
-[`backend/verification/heroku_relation_identity.sql`](../backend/verification/heroku_relation_identity.sql).
-It selects only schema/relation kind and names, installed extension/version,
-the exact whole-object `pg_depend` extension membership and an AVERO name-conflict
-flag. It never selects owners, credentials, definitions, statistics query text
-or application rows. It reports provider provenance as **UNVERIFIED**: catalog
-membership cannot prove who installed or later modified an extension.
-
-Bind the conflict-check names from current reviewed metadata rather than records:
-
-```python
-import app.models
-from app.db import Base
-from app.rate_limits import rate_table
-from sqlalchemy import PrimaryKeyConstraint, UniqueConstraint, text
-
-names = {"alembic_version", "alembic_version_pkc"}
-for table in list(Base.metadata.tables.values()) + [rate_table]:
-    names.add(table.name)
-    names.update(index.name for index in table.indexes if index.name)
-    for constraint in table.constraints:
-        if isinstance(constraint, (PrimaryKeyConstraint, UniqueConstraint)):
-            names.add(constraint.name or table.name + "_pkey")
-# Within the already verified read-only connection, using the reviewed query:
-rows = connection.execute(text(sql), {"avero_relation_names": sorted(names)}).all()
-```
-
-Validate and JSON-encode all metadata before displaying it to the authorized
-operator; never interpolate identifiers into SQL or print raw exceptions or
-connection details. Bound the result/output size and fail closed on malformed,
-duplicate or inconsistent membership replies. A metadata conflict flag is not
-an exhaustive safety assessment. Do not read unknown view contents or print
-view definitions, which could contain sensitive literals.
-
-Next gates before the first migration: separately review/approve commit, push,
-CI and deployment of the compatibility patch; preserve maintenance ON/web=0;
-rerun the deployed preflight (including capacity) and verify the actual current
-inventory; review full-chain offline SQL and recovery readiness; then obtain
-separate explicit authorization for the exact target and guarded migration.
-After migration, separately verify the revision/schema and application readiness
-before starting a web dyno or opening traffic. No step is executed by this patch.
-Provider provenance can be investigated with Heroku support; do not represent
-catalog membership as proof. Counts or names alone never authorize migration.
-
-References: [PostgreSQL statistics extension](https://www.postgresql.org/docs/18/pgstatstatements.html),
+References: [Heroku internal Essential schema](https://help.heroku.com/HYME3MD5/unexpected-statements-in-the-backup-from-a-essential-x-database-is-causing-local-pg_restore-to-fail),
+[PostgreSQL role and privilege checks](https://www.postgresql.org/docs/18/functions-info.html),
+[statistics views](https://www.postgresql.org/docs/18/pgstatstatements.html),
 [extension dependencies](https://www.postgresql.org/docs/18/catalog-pg-depend.html),
-[Heroku extensions](https://devcenter.heroku.com/articles/heroku-postgres-extensions-postgis-full-text-search),
-[PostgreSQL 18 extension control](https://github.com/postgres/postgres/blob/REL_18_STABLE/contrib/pg_stat_statements/pg_stat_statements.control),
 [SQLAlchemy no_parameters](https://docs.sqlalchemy.org/en/20/core/connections.html#sqlalchemy.engine.Connection.execution_options.params.no_parameters).
+
+### Approved release and first migration runbook
+
+These are future operator instructions, **not executed by this implementation**.
+No new permanent resource is required. Each real release/migration/DNS action
+still needs explicit approval; Heroku one-off dynos consume temporary billable
+usage. Keep production secrets and target identifiers private.
+
+1. After approval, commit/push the reviewed files, require the four CI jobs to
+   pass for that SHA, and manually deploy that exact release from `feat/fullstack`
+   in **Heroku → avero-api → Deploy → Manual deploy**. Leave automatic deployments
+   disabled. Confirm maintenance ON and **Resources → web → Basic**, scaled to
+   zero. A release may start a web process; stop it before migration if necessary:
+
+   ```sh
+   heroku maintenance:on --app avero-api
+   heroku ps:scale web=0 --app avero-api
+   ```
+
+2. Run the reviewed, read-only preflight from the new release. It verifies the
+   ownership/privilege boundary in the actual database; offline mocks cannot
+   prove those live grants. If it fails, stop on the specific failure. Do not
+   switch TLS modes, change ownership, edit provider objects or relax the guard.
+
+   ```sh
+   heroku run --app avero-api --size basic --no-tty --exit-code -- python backend/verification/heroku_pg_preflight.py
+   ```
+
+3. Separately approve the exact target and complete offline migration SQL. Replace
+   the host/database placeholders below with the privately reviewed target, not
+   values copied from untrusted output. Keep the explicit host/database arguments
+   independent of environment-only approval. This runner fixes the revision at
+   `0005_auth_rate_limits` and uses one transaction/connection with advisory lock
+   and timeouts; startup never runs it:
+
+   ```sh
+   heroku run --app avero-api --size basic --no-tty --exit-code -- python -m app.production_migrations --host '<approved-provider-host>' --database '<approved-new-database>' --confirm 'MIGRATE NEW AVERO PRODUCTION DATABASE'
+   ```
+
+4. On confirmed migration success, start exactly one Basic web dyno, keeping
+   maintenance ON while preparing the custom domain. The production Procfile and
+   one-worker limits are already configured:
+
+   ```sh
+   heroku ps:scale web=1 --app avero-api
+   ```
+
+5. Add `api.getavero.app` in **Heroku → Settings → Domains and certificates** if
+   not already attached. In Name.com, use the exact Heroku-provided DNS target for
+   an `api` CNAME; never invent a target or use the database hostname. Enable
+   Automatic Certificate Management and wait for valid HTTPS. No wildcard origin
+   or temporary default-domain authentication bypass is needed.
+
+6. Once HTTPS is valid, turn maintenance OFF and check both endpoints. Expect
+   HTTP 200 with `ok` and `ready`. Readiness verifies the migrated security schema;
+   liveness alone is insufficient. If readiness fails, re-enable maintenance and
+   keep users out while investigating:
+
+   ```sh
+   heroku maintenance:off --app avero-api
+   curl --fail --silent --show-error https://api.getavero.app/api/v1/health
+   curl --fail --silent --show-error https://api.getavero.app/api/v1/health/ready
+   ```
+
+7. In Vercel Hobby, import this repository with the root Vite project and reviewed
+   `feat/fullstack` release, using existing `vercel.json` build/SPA routing. Set
+   only the public production variables `VITE_API_BASE_URL=https://api.getavero.app/api/v1`
+   and `VITE_APP_ORIGIN=https://getavero.app`. Attach `getavero.app`; copy the
+   DNS records shown by Vercel into Name.com and verify HTTPS. Do not add secrets
+   or use arbitrary preview/default domains with production authentication.
+
+8. Use a new synthetic account for a brief browser smoke test: register/login,
+   refresh/reload, owner-isolated transaction CRUD, logout/re-login, and direct SPA
+   navigation. Check cookie Secure/HttpOnly/SameSite=Lax and exact credentialed
+   CORS/CSRF behavior. Do not use or modify existing accounts or financial records.
+   Check memory/connection usage and billing; keep one worker and one web dyno.
+
+### Minimal first-migration recovery
+
+For a normal failure before commit, the runner exits through `Engine.begin()`,
+which rolls back transactional PostgreSQL DDL and the Alembic version changes;
+it then disposes the engine. Keep maintenance ON and web=0. After reviewing the
+sanitized failure, rerun only the read-only preflight. If it passes again, a retry
+of the guarded migration requires renewed explicit approval of the same target.
+Never drop/reset the database, touch `_heroku`, force an Alembic stamp, run a
+downgrade, or disable a guard to retry.
+
+If the process loses its connection near commit, the outcome is **unknown**.
+Do not assume rollback or automatically retry. Establish `public.alembic_version`
+and schema/readiness through an authorized read-only connection using the same
+verified TLS/identity path. If revision `0005_auth_rate_limits` is already
+committed, proceed with readiness verification rather than rerunning the initial
+migration. Any inconsistent/partial state requires targeted review, not deletion.
+No restore, extra database or new paid service is part of this initial launch.
 
 ## Backups, recovery and rollback
 
-Before admitting real users, explicitly schedule Heroku PGBackups (daily; check
+Before storing financial records worth preserving, schedule Heroku PGBackups (daily; check
 current Essential retention). Take a manual capture before approved future
 migrations; download a copy to operator-controlled encrypted storage, with a
 documented retention/deletion policy. Use existing encrypted private storage
@@ -290,8 +340,9 @@ browser localStorage or the ephemeral dyno filesystem. User JSON export is not
 a complete database backup (it excludes authentication/receipts).
 [PGBackups](https://devcenter.heroku.com/articles/heroku-postgres-backups).
 
-Initial proposed objectives: RPO 24 hours; RTO four hours, **unverified until a
-restore drill**. Restore only to a separately approved, isolated new database.
+Restore capability remains unverified until tested; a restore drill is recommended
+before relying on the app for important data, not a new resource requirement for
+this empty-target portfolio launch. Restore only to a separately approved, isolated new database.
 Verify schema, account ownership, exact decimal values, receipt consistency,
 row counts and readiness before any cutover. Revoke restored auth sessions and
 rotate the access-token signing key to avoid resurrecting previously revoked
@@ -302,22 +353,18 @@ automatic downgrade or restore in place over the current database.
 
 ## Remaining launch gates and limitations
 
-1. Separate approval for provider resources, domain DNS, config
-   secrets, migration and deployment; this phase performs none of those actions.
-2. Confirm plan/credit eligibility, Python-only buildpack, PostgreSQL 18.4 migration compatibility,
-   registered-domain DNS/certificates, provider CA verification and the spending cap.
-3. Isolated staging: real TLS, proxy-header contract, browser login/logout and
-   refresh, owner-isolated CRUD, shared quota concurrency, small-dyno memory and
-   connection load, migration/restore rehearsal. Offline fakes do not prove live
-   PostgreSQL SQL execution or provider integration.
-4. Independent encrypted backups and a successful restore drill before real data.
-5. Essential-0 has permissive owner credentials and limited role/HA controls;
-   confirm available privilege restrictions. Protect Heroku/Vercel accounts with
-   MFA, least-privilege collaborators and short/private log retention. Router
-   logs can include query strings (including financial search terms); app access
-   logging is disabled but cannot suppress provider logging. Never send tokens
-   or passwords in URLs. No public demo account may contain personal records.
-6. Cross-tab refresh rotation remains the existing documented limitation: use one
-   active tab until separately improved. This phase adds no deployment automation
-   or secrets to GitHub Actions and makes no security/availability guarantee for
-   real funds or highly sensitive financial use.
+1. Obtain approval for the reviewed release, live preflight, explicit migration,
+   existing dyno startup, Vercel deployment and domain/DNS setup. No live action is
+   performed by this patch. Existing TLS/identity results are operator-reported;
+   the new ownership/conflict checks still need one deployed preflight run.
+2. Confirm API/frontend DNS and HTTPS, readiness and the synthetic browser smoke
+   test above. Offline tests do not prove Heroku's live role grants, event-trigger
+   behavior during DDL, small-dyno memory or actual API/browser integration.
+3. Back up data worth keeping. Essential-0 has limited role/HA controls. Protect
+   provider accounts with MFA, keep collaborators/log retention minimal, and
+   monitor the existing Basic + Essential budget. No extra permanent services,
+   staging database or exhaustive provider-object audit is required here.
+4. Router logs can contain URL query strings; never send passwords or tokens in
+   URLs. Public demo accounts must contain synthetic data only. Multiple tabs can
+   still race refresh-token rotation; use one active tab. This remains a small
+   portfolio deployment without a high-availability or real-funds guarantee.

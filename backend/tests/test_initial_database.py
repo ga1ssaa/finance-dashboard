@@ -6,6 +6,8 @@ import traceback
 
 import pytest
 from psycopg import ProgrammingError
+from psycopg.pq import Format
+from sqlalchemy.engine import Connection
 from sqlalchemy import Column, Integer, Table
 from psycopg._queries import PostgresQuery
 from psycopg.adapt import Transformer
@@ -33,6 +35,14 @@ CASES = [
     ('empty', [], [('public',)], True),
     ('approved', APPROVED, [('public',)], True),
     ('reversed', APPROVED[::-1], [('public',)], True),
+    ('protected-heroku', APPROVED, [('public',), ('_heroku',)], True),
+    ('protected-heroku-first', APPROVED, [('_heroku',), ('public',)], True),
+    ('empty-protected-heroku', [], [('public',), ('_heroku',)], True),
+    ('unprotected-heroku', APPROVED, [('public',), ('_heroku', False)], False),
+    ('malformed-heroku-boundary', APPROVED, [('public',), ('_heroku', 1)], False),
+    ('unknown-heroku-boundary', APPROVED, [('public',), ('_heroku', None)], False),
+    ('spoofed-provider-schema', APPROVED, [('public',), ('_heroku_extra', True)], False),
+    ('extra-schema-after-heroku', APPROVED, [('public',), ('_heroku',), ('extra',)], False),
     ('missing-first', APPROVED[1:], [('public',)], False),
     ('missing-second', APPROVED[:1], [('public',)], False),
     ('duplicate', [APPROVED[0], APPROVED[0]], [('public',)], False),
@@ -80,6 +90,7 @@ def test_identical_initial_policy_blocks_every_other_inventory(
     connection.execute = MagicMock()
     target = connection.engine.url
     connection.execute.return_value.one.return_value = (target.database, target.username)
+    connection.execute.return_value.scalar_one.return_value = False
     results = []
 
     def inspect(sql, **kwargs):
@@ -88,7 +99,9 @@ def test_identical_initial_policy_blocks_every_other_inventory(
         adapter = PostgresQuery(Transformer())
         adapter.convert(sql, None)
         assert adapter.query.decode() == sql
-        reply = {policy.RELATIONS_SQL: [counts], policy.SCHEMAS_SQL: schemas,
+        schema_rows = [tuple(row) if len(row) != 1 else (row[0], row[0] in {'public','_heroku'}) for row in schemas]
+        reply = {policy.RELATIONS_SQL: [counts], policy.SCHEMAS_SQL: schema_rows,
+                 policy.PUBLIC_READY_SQL: [(True,)],
                  policy.EXTENSION_VERSION_SQL: [('1.12',)] if rows else [],
                  policy.EXTENSION_RELATIONS_SQL: rows}[sql]
         result = MagicMock()
@@ -165,13 +178,14 @@ def test_future_model_collision_rejects_previously_approved_view(synthetic, caps
             synthetic.extension_versions = [('1.12',)]
             outcome(synthetic, capsys, 1)
         else:
-            replies = iter([[(2, 2)], [('public',)], [('1.12',)], APPROVED])
+            replies = iter([[(2, 2)], [('public', True)], [(True,)], [('1.12',)], APPROVED])
             def inspect(*args, **kwargs):
                 result = MagicMock()
                 result.fetchmany.return_value = next(replies)
                 return result
             with pytest.raises(RuntimeError, match='^' + policy.FAILURE + '$'):
-                policy.require_initial_database(SimpleNamespace(exec_driver_sql=inspect))
+                result = MagicMock();result.scalar_one.return_value = False
+                policy.require_initial_database(SimpleNamespace(exec_driver_sql=inspect, execute=lambda *a,**k: result))
     finally:
         Base.metadata.remove(table)
 
@@ -191,7 +205,7 @@ def test_preflight_uses_exact_same_validator():
 
 
 @pytest.mark.parametrize('sql', [policy.RELATIONS_SQL, policy.SCHEMAS_SQL,
-                                 policy.EXTENSION_VERSION_SQL, policy.EXTENSION_RELATIONS_SQL])
+                                 policy.PUBLIC_READY_SQL, policy.EXTENSION_VERSION_SQL, policy.EXTENSION_RELATIONS_SQL])
 def test_inspection_sql_and_percent_adaptation(sql):
     assert sql.lstrip().startswith('SELECT') and ';' not in sql
     adapter = PostgresQuery(Transformer())
@@ -200,7 +214,7 @@ def test_inspection_sql_and_percent_adaptation(sql):
     if 'LIKE' in sql:
         with pytest.raises(ProgrammingError):
             adapter.convert(sql, {})
-    if 'LEFT JOIN' in sql:
+    if sql == policy.EXTENSION_RELATIONS_SQL:
         assert 'd.objsubid = 0' in sql and 'd.refobjsubid = 0' in sql and "d.deptype = 'e'" in sql
     assert 'pg_stat_statements(' not in sql  # Never execute extension functions or read the views.
 
@@ -227,3 +241,221 @@ def test_approved_views_require_consistent_extension_registry(synthetic, capsys,
 def test_installed_extension_with_both_views_missing_is_not_empty(synthetic, capsys):
     synthetic.extension_versions = [('1.12',)]
     outcome(synthetic, capsys, 1)
+
+
+def approved_catalog(case):
+    case.relations, case.inventory = (2, 2), APPROVED.copy()
+    case.extension_versions = [('1.12',)]
+
+
+CATALOG_QUERIES = {
+    'COUNTS': policy.RELATIONS_SQL,
+    'SCHEMAS': policy.SCHEMAS_SQL,
+    'EXTENSION_VERSION': policy.EXTENSION_VERSION_SQL,
+    'VIEWS': policy.EXTENSION_RELATIONS_SQL,
+}
+
+
+@pytest.mark.parametrize('stage', CATALOG_QUERIES)
+@pytest.mark.parametrize('failure', ['EXECUTION_FAILED', 'FETCH_FAILED', 'RESULT_INVALID',
+                                    'CLOSE_FAILED', 'NOT_APPROVED'])
+def test_fixed_diagnostics_distinguish_sql_result_and_policy_failures(
+        synthetic, capsys, monkeypatch, stage, failure):
+    approved_catalog(synthetic)
+    original = Connection.exec_driver_sql
+    code = 'INITIAL_' + stage + '_' + failure
+
+    def execute(connection, statement, *args, **kwargs):
+        if statement == CATALOG_QUERIES[stage] and failure == 'EXECUTION_FAILED':
+            raise ProgrammingError('synthetic-private-marker')
+        result = original(connection, statement, *args, **kwargs)
+        if statement != CATALOG_QUERIES[stage]:
+            return result
+        if failure == 'FETCH_FAILED':
+            def fetch(_size):
+                raise RuntimeError('synthetic-private-marker')
+            monkeypatch.setattr(result, 'fetchmany', fetch)
+        elif failure == 'RESULT_INVALID':
+            monkeypatch.setattr(result, 'fetchmany', lambda _size: [None])
+        elif failure == 'CLOSE_FAILED':
+            close = result.close
+            def fail_close():
+                close()
+                raise RuntimeError('synthetic-private-marker')
+            monkeypatch.setattr(result, 'close', fail_close)
+        return result
+
+    monkeypatch.setattr(Connection, 'exec_driver_sql', execute)
+    if failure == 'NOT_APPROVED':
+        if stage == 'COUNTS':
+            synthetic.relations = (3, 2)
+        elif stage == 'SCHEMAS':
+            synthetic.schemas.append(('synthetic-extra-empty-schema',))
+        elif stage == 'EXTENSION_VERSION':
+            synthetic.extension_versions = [('1.11',)]
+        else:
+            synthetic.inventory = changed(1, 'synthetic-unapproved-view')
+    output = outcome(synthetic, capsys, 1)
+    assert [line for line in output.splitlines() if line.startswith('FAIL ')] == ['FAIL ' + code]
+    assert 'synthetic-private-marker' not in output
+    assert 'synthetic-extra-empty-schema' not in output
+    assert all('max_connections' not in sql for sql in synthetic.drivers[0].sql)
+
+
+def test_literal_percent_adaptation_failure_has_execution_code(synthetic, capsys, monkeypatch):
+    original = Cursor.execute
+    def execute(cursor, statement, params=None):
+        if statement == policy.RELATIONS_SQL:
+            # Reproduce the actual psycopg exception, not a hand-written mock error.
+            PostgresQuery(Transformer()).convert(statement, {})
+        return original(cursor, statement, params)
+    monkeypatch.setattr(Cursor, 'execute', execute)
+    assert 'FAIL INITIAL_COUNTS_EXECUTION_FAILED' in outcome(synthetic, capsys, 1)
+
+
+def test_catalog_native_decoding_and_duplicate_sql_labels_pass(synthetic, capsys, monkeypatch):
+    approved_catalog(synthetic)
+    columns = {
+        policy.RELATIONS_SQL: [('count', 20), ('count', 20)],
+        policy.SCHEMAS_SQL: [('nspname', 25), ('protected', 16)],
+        policy.PUBLIC_READY_SQL: [('ready', 16)],
+        policy.EXTENSION_VERSION_SQL: [('extversion', 25)],
+        policy.EXTENSION_RELATIONS_SQL: [('nspname', 19), ('relname', 19), ('relkind', 18),
+            ('extname', 19), ('extversion', 25), ('?column?', 16)],
+    }
+    original = Cursor.execute
+    decoded = []
+
+    def execute(cursor, statement, params=None):
+        original(cursor, statement, params)
+        if statement not in columns:
+            return
+        assert params is None
+        query = PostgresQuery(Transformer())
+        query.convert(statement, params)
+        assert query.query.decode() == statement
+        fields = columns[statement]
+        transformer = Transformer()
+        transformer.set_loader_types([oid for _, oid in fields], Format.TEXT)
+        def wire(value):
+            return None if value is None else b't' if value is True else b'f' if value is False else str(value).encode()
+        cursor.rows = [transformer.load_sequence([wire(value) for value in row]) for row in cursor.rows]
+        cursor.description = [(name, oid, None, None, None, None, None) for name, oid in fields]
+        decoded.append(statement)
+
+    monkeypatch.setattr(Cursor, 'execute', execute)
+    outcome(synthetic, capsys, 0)
+    assert set(decoded) == set(columns)
+
+
+@pytest.mark.parametrize('failure,code', [
+    ('names', 'INITIAL_NAME_CHECK_FAILED'),
+    ('conflict', 'INITIAL_SCHEMA_CONFLICT'),
+    ('timeout', 'INITIAL_TARGET_TIMEOUT'),
+    ('unexpected', 'INITIAL_TARGET_CHECK_ERROR'),
+])
+def test_metadata_and_runtime_failures_use_fixed_codes(synthetic, capsys, monkeypatch, failure, code):
+    approved_catalog(synthetic)
+    def fail():
+        raise RuntimeError('synthetic-private-marker')
+    if failure == 'names':
+        monkeypatch.setattr(policy, 'application_relation_names', fail)
+    elif failure == 'conflict':
+        monkeypatch.setattr(policy, 'application_relation_names', lambda: {'pg_stat_statements'})
+    else:
+        def rows(*_args):
+            raise TimeoutError('synthetic-private-marker') if failure == 'timeout' else ValueError('synthetic-private-marker')
+        monkeypatch.setattr(policy, '_rows', rows)
+    output = outcome(synthetic, capsys, 1)
+    assert 'FAIL ' + code in output and 'synthetic-private-marker' not in output
+
+
+def test_diagnostic_allowlist_is_exact_and_untrusted_values_never_print():
+    expected = {'INITIAL_' + stage + '_' + failure
+                for stage in CATALOG_QUERIES for failure in
+                ('EXECUTION_FAILED', 'FETCH_FAILED', 'RESULT_INVALID', 'CLOSE_FAILED', 'NOT_APPROVED')}
+    expected.update({'INITIAL_NAME_CHECK_FAILED', 'INITIAL_SCHEMA_CONFLICT',
+                     'INITIAL_TARGET_TIMEOUT', 'INITIAL_TARGET_CHECK_ERROR', 'INITIAL_PUBLIC_SCHEMA_NOT_READY'})
+    assert policy.INITIAL_DATABASE_FAILURE_CODES == expected
+    error = policy.InitialDatabaseError('synthetic-private-marker')
+    assert error.code == 'INITIAL_TARGET_CHECK_ERROR' and str(error) == policy.FAILURE
+    error._code = ['synthetic-private-marker']
+    error.args = ('synthetic-private-marker',)
+    assert error.code == 'INITIAL_TARGET_CHECK_ERROR' and str(error) == policy.FAILURE
+
+
+def test_preflight_revalidates_corrupted_initial_diagnostic(synthetic, capsys, monkeypatch):
+    from verification import heroku_pg_preflight as probe
+    def fail(_connection):
+        error = policy.InitialDatabaseError('INITIAL_SCHEMAS_NOT_APPROVED')
+        error._code = 'synthetic-private-marker'
+        error.args = ('synthetic-private-marker',)
+        raise error
+    monkeypatch.setattr(probe, 'require_initial_database', fail)
+    assert 'FAIL INITIAL_TARGET_CHECK_ERROR' in outcome(synthetic, capsys, 1)
+
+
+@pytest.mark.parametrize('field,value', [
+    ('owner_exists', False), ('owner_member', True), ('can_create', True),
+    ('owns_routine', True), ('owns_type', True), ('owns_relation', True),
+    ('owner_admin', True), ('routine_admin', True), ('type_admin', True), ('relation_admin', True),
+])
+def test_heroku_name_never_overrides_ownership_or_write_privileges(synthetic, capsys, field, value):
+    approved_catalog(synthetic)
+    synthetic.schemas = [('public',), ('_heroku',)]
+    setattr(synthetic.provider, field, value)
+    assert 'FAIL INITIAL_SCHEMAS_NOT_APPROVED' in outcome(synthetic, capsys, 1)
+
+
+@pytest.mark.parametrize('kind', ['r', 'v', 'm', 'S', 'f', 'p'])
+def test_extra_relations_in_provider_namespace_remain_rejected(synthetic, capsys, kind):
+    approved_catalog(synthetic)
+    synthetic.schemas = [('public',), ('_heroku',)]
+    synthetic.inventory.append(('_heroku', 'unexpected_application_object', kind, '', '', False))
+    synthetic.relations = (3, 2)
+    assert 'FAIL INITIAL_COUNTS_NOT_APPROVED' in outcome(synthetic, capsys, 1)
+
+
+@pytest.mark.parametrize('privilege', [False, None, 1, 'true'])
+def test_public_privileges_require_a_boolean_true(synthetic, capsys, privilege):
+    synthetic.privileges = privilege
+    assert 'FAIL INITIAL_PUBLIC_SCHEMA_NOT_READY' in outcome(synthetic, capsys, 1)
+
+
+def test_public_search_path_is_required_even_for_empty_target(synthetic, capsys):
+    synthetic.public_path = False
+    assert 'FAIL INITIAL_PUBLIC_SCHEMA_NOT_READY' in outcome(synthetic, capsys, 1)
+
+
+@pytest.mark.parametrize('kind', ['domain', 'composite-type', 'index'])
+def test_actual_public_name_conflicts_are_rejected_without_application_tables(synthetic, capsys, kind):
+    synthetic.conflict = True  # Synthetic SELECT EXISTS reply from pg_type/pg_class.
+    assert 'FAIL INITIAL_SCHEMA_CONFLICT' in outcome(synthetic, capsys, 1)
+
+
+@pytest.mark.parametrize('version', ['180000', '180003', '180004', '180006'])
+def test_postgres_18_minor_updates_do_not_require_an_application_release(synthetic, capsys, version):
+    synthetic.version = version
+    assert 'PASS PostgreSQL 18 compatibility' in outcome(synthetic, capsys, 0)
+
+
+def test_provider_boundary_is_about_ownership_not_an_internal_object_manifest():
+    sql = policy.SCHEMAS_SQL
+    assert "n.nspname = '_heroku'" in sql
+    assert "NOT pg_catalog.pg_has_role(current_user, n.nspowner, 'MEMBER')" in sql
+    assert "NOT pg_catalog.has_schema_privilege(current_user, n.oid, 'CREATE')" in sql
+    for owner in ('p.proowner', 't.typowner', 'c.relowner'):
+        assert "pg_catalog.pg_has_role(current_user, " + owner + ", 'MEMBER')" in sql
+        assert "pg_catalog.pg_has_role(current_user, " + owner + ", 'MEMBER WITH ADMIN OPTION')" in sql
+    assert "NOT pg_catalog.pg_has_role(current_user, n.nspowner, 'MEMBER WITH ADMIN OPTION')" in sql
+    assert '14' not in sql and 'pg_event_trigger' not in sql
+    assert '_heroku' not in policy.RELATIONS_SQL  # No provider relation exemption.
+    assert "current_schemas(false) = ARRAY['public']::name[]" in policy.PUBLIC_READY_SQL
+    assert "n.nspname = 'public'" in policy.TARGET_CONFLICTS_SQL
+    assert 'pg_catalog.pg_class' in policy.TARGET_CONFLICTS_SQL and 'pg_catalog.pg_type' in policy.TARGET_CONFLICTS_SQL
+    statement = __import__('sqlalchemy').text(policy.TARGET_CONFLICTS_SQL).bindparams(
+        relation_names=sorted(policy.application_relation_names()), table_names=sorted(policy.TARGET_TABLE_NAMES))
+    from sqlalchemy.dialects.postgresql.psycopg import PGDialect_psycopg
+    compiled = statement.compile(dialect=PGDialect_psycopg())
+    adapted = PostgresQuery(Transformer());adapted.convert(str(compiled), compiled.params)
+    assert b'$1' in adapted.query and b'$2' in adapted.query

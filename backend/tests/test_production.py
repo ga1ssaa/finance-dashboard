@@ -262,19 +262,22 @@ def synthetic_migration_engine():
     cursor = connection.connection.driver_connection.cursor.return_value.__enter__.return_value
     cursor.fetchone.return_value = (DB, 'synthetic', 'synthetic', '203.0.113.10', 5432)
     def inspect(sql, **kwargs):
-        from app.initial_database import RELATIONS_SQL, SCHEMAS_SQL, EXTENSION_VERSION_SQL
+        from app.initial_database import RELATIONS_SQL, SCHEMAS_SQL, EXTENSION_VERSION_SQL, PUBLIC_READY_SQL
         assert kwargs == {'execution_options': {'no_parameters': True}}
         result = MagicMock()
         if sql == RELATIONS_SQL:
             result.fetchmany.return_value = [(connection.scalar.return_value, 0)]
         elif sql == SCHEMAS_SQL:
-            result.fetchmany.return_value = [('public',)]
+            result.fetchmany.return_value = [('public', True)]
+        elif sql == PUBLIC_READY_SQL:
+            result.fetchmany.return_value = [(True,)]
         elif sql == EXTENSION_VERSION_SQL:
             result.fetchmany.return_value = []
         else:
             raise AssertionError('Unexpected initial-target query')
         return result
     connection.exec_driver_sql.side_effect = inspect
+    connection.execute.return_value.scalar_one.return_value = False
     return engine, connection
 
 
@@ -296,6 +299,20 @@ def test_authorized_empty_target_passes_same_connection_and_fixed_revision(monke
     migrate_new_database(configured(),HOST,DB,PHRASE,environ={'DYNO':'run.1234'})
     config,revision=upgrade.call_args.args
     assert revision==PRODUCTION_REVISION and config.attributes['connection'] is connection and config.attributes['production_authorization'] is AUTHORIZATION
+
+
+def test_failed_upgrade_leaves_transaction_context_with_error_and_disposes_engine(monkeypatch):
+    engine,connection=synthetic_migration_engine()
+    connection.execute.return_value.one.return_value=(DB,'synthetic');connection.scalar.return_value=0
+    monkeypatch.setattr('app.production_migrations.create_database_engine',lambda _:engine)
+    failure=RuntimeError('synthetic upgrade failure')
+    upgrade=MagicMock(side_effect=failure)
+    monkeypatch.setattr('app.production_migrations.command.upgrade',upgrade)
+    with pytest.raises(RuntimeError,match='synthetic upgrade failure'):
+        migrate_new_database(configured(),HOST,DB,PHRASE,environ={'DYNO':'run.1234'})
+    # SQLAlchemy Engine.begin rolls its transaction back when __exit__ gets an error.
+    assert engine.begin.return_value.__exit__.call_args.args[1] is failure
+    engine.dispose.assert_called_once()
 
 
 def test_migration_cli_uses_canonical_module_authorization_identity(monkeypatch):

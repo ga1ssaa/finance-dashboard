@@ -387,7 +387,7 @@ def test_local_target_cannot_accept_a_public_server_address():
         'table', 'sequence', 'mixed-provider-application', 'unexpected-schema'])
 def test_runner_rejects_unapproved_inventory_and_preserves_literal_percent(monkeypatch, relations):
     from app import production_migrations as migrations
-    from app.initial_database import RELATIONS_SQL, SCHEMAS_SQL
+    from app.initial_database import RELATIONS_SQL, SCHEMAS_SQL, PUBLIC_READY_SQL
     from psycopg._queries import PostgresQuery
     from psycopg.adapt import Transformer
 
@@ -397,13 +397,14 @@ def test_runner_rejects_unapproved_inventory_and_preserves_literal_percent(monke
     configured.production_database_host, configured.production_database_name = target.host, target.database
     connection.execute = MagicMock()
     connection.execute.return_value.one.return_value = (target.database, target.username)
+    connection.execute.return_value.scalar_one.return_value = False
     def inspect(sql, **kwargs):
         assert kwargs == {'execution_options': {'no_parameters': True}}
         adapted = PostgresQuery(Transformer())
         adapted.convert(sql, None)
         assert adapted.query.decode() == sql
         result = MagicMock()
-        result.fetchmany.return_value = ([('public',)] if sql == SCHEMAS_SQL else
+        result.fetchmany.return_value = ([('public', True)] if sql == SCHEMAS_SQL else [(True,)] if sql == PUBLIC_READY_SQL else
             [(len(relations), sum(ext is not None for _, _, ext in relations))] if sql == RELATIONS_SQL else [])
         return result
     connection.exec_driver_sql = MagicMock(side_effect=inspect)
@@ -467,9 +468,12 @@ def test_complete_migration_chain_generates_postgres_sql_offline(monkeypatch):
         assert expected in sql
     assert 'DROP TABLE' not in sql and 'TRUNCATE' not in sql
     import re
-    from app.initial_database import application_relation_names
+    from app.initial_database import application_relation_names, TARGET_TABLE_NAMES
     created_names = set(re.findall(r'CREATE (?:UNIQUE )?(?:TABLE|INDEX|SEQUENCE) (\w+)', sql))
     backed_constraint_names = set(re.findall(r'CONSTRAINT (\w+) (?:PRIMARY KEY|UNIQUE)', sql))
     assert created_names and backed_constraint_names
     assert created_names | backed_constraint_names <= application_relation_names()
     assert not {'pg_stat_statements', 'pg_stat_statements_info'} & created_names
+    assert set(re.findall(r'CREATE TABLE (\w+)', sql)) == TARGET_TABLE_NAMES
+    for forbidden in ('_heroku', 'pg_stat_statements', 'CREATE SCHEMA', 'CREATE FUNCTION', 'CREATE EVENT TRIGGER'):
+        assert forbidden not in sql

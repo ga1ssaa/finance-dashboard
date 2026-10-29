@@ -23,7 +23,7 @@ from sqlalchemy import event
 
 from app.config import Settings
 from app.db import create_database_engine
-from app.initial_database import RELATIONS_SQL, require_initial_database
+from app.initial_database import InitialDatabaseError, RELATIONS_SQL, require_initial_database
 from app.production import require_heroku
 from app.production_migrations import IdentityVerificationError, checked_target, verify_connection_target
 
@@ -151,22 +151,14 @@ def _inspect(arm_cleanup):
 
         stage = "PostgreSQL version"
         version = connection.exec_driver_sql("SHOW server_version_num").scalar_one()
-        _require(str(version) == str(EXPECTED_VERSION))
-        print("PASS PostgreSQL 18.4")
-
-        stage = "schema privileges"
-        _require(connection.exec_driver_sql("SELECT has_schema_privilege(current_user, 'public', 'USAGE') "
-            "AND has_schema_privilege(current_user, 'public', 'CREATE')").scalar_one() is True)
-        print("PASS public schema privileges")
-
-        stage = "initial Alembic state"
-        _require(connection.exec_driver_sql(
-            "SELECT to_regclass('public.alembic_version') IS NULL").scalar_one() is True)
-        print("PASS no Alembic revision table")
+        # Minor PostgreSQL updates must not require a source change. The reviewed
+        # production DDL is reviewed for PostgreSQL 18; unknown majors fail closed.
+        _require(str(version).isdecimal() and int(str(version)) // 10000 == EXPECTED_VERSION // 10000)
+        print("PASS PostgreSQL 18 compatibility")
 
         stage = "empty target or approved initial extension views"
         require_initial_database(connection)
-        print("PASS migration runner initial-target requirement")
+        print("PASS public schema privileges, protected namespaces and initial migration targets")
 
         stage = "connection capacity snapshot"
         server_free, role_limit, role_used = connection.exec_driver_sql(CAPACITY_SQL).one()
@@ -177,6 +169,8 @@ def _inspect(arm_cleanup):
         print("PASS connection capacity snapshot")
         status = 0
     except IdentityVerificationError as error:
+        print("FAIL " + error.code)
+    except InitialDatabaseError as error:
         print("FAIL " + error.code)
     except BaseException:
         print("FAIL " + stage + "; details suppressed")
